@@ -1,387 +1,159 @@
 /**
- * تخطيط سلسلة الدومينو للعرض فقط.
- * يعتمد على ChainTile.left/right وهي الحقيقة القادمة من المحرك.
+ * منطق عرض سلسلة الدومينو (Snake Layout).
+ * يبدأ من منتصف الطاولة، يمتد يميناً ويساراً، وينعطف تلقائياً
+ * عند حدود الطاولة دون أي تداخل بين القطع.
+ * هذا المنطق عرض فقط — الحقيقة المنطقية تبقى في المحرك.
  */
 
 import type { ChainTile, Tile } from '@/types/game';
 
 export interface PositionedTile {
   tile: Tile;
+  /** الإحداثيات بوحدة الخلية (سمك القطعة = 1، طولها = 2) */
   x: number;
   y: number;
+  /** العرض والارتفاع بالخلايا */
   w: number;
   h: number;
+  /** زاوية الدوران بالدرجات لعرض القطعة الرأسية */
   rotation: number;
   isDouble: boolean;
 }
 
 export interface SnakeLayout {
   tiles: PositionedTile[];
+  /** أبعاد مساحة العرض بالخلايا */
   width: number;
   height: number;
 }
 
-const TILE_W = 2;
-const TILE_H = 1;
+/** أقصى امتداد أفقي لكل ذراع قبل الانعطاف (بالخلايا) */
+const ARM_LIMIT = 7;
 
-const MAX_ROW = 10;
-
-
-/**
- * يحدد اتجاه القطعة بحيث يبقى الطرف الداخل
- * ملاصقاً للقطعة السابقة.
- */
-function getRotation(
-  ct: ChainTile,
-  entry: number,
-  horizontal: boolean
-): number {
-
-  const { tile } = ct;
-
-  if (horizontal) {
-    // قطعة أفقية
-    if (tile.top === entry) {
-      return 0;
-    }
-
-    return 180;
-  }
-
-
-  // قطعة رأسية
-  if (tile.top === entry) {
-    return 90;
-  }
-
-  return 270;
+interface ArmCursor {
+  x: number; // الحافة الحرة
+  y: number; // صف البداية (أعلى القطع الأفقية)
+  dir: 1 | -1;
+  turnSign: 1 | -1; // +1 انعطاف للأسفل، -1 للأعلى
 }
 
-
-
 /**
- * حساب السلسلة كاملة.
+ * اختيار زاوية الدوران بحيث تظهر قيمة معينة على جهة معينة.
+ * القطعة الأصل رأسية: rotation=90 (مع عقارب الساعة) يجعل النصف العلوي شرقاً.
  */
-export function layoutChain(
-  chain: ChainTile[]
-): SnakeLayout {
-
-  if (!chain.length) {
-    return {
-      tiles: [],
-      width: 0,
-      height: 0,
-    };
+function rotationFor(tile: Tile, value: number, face: 'east' | 'west'): number {
+  if (face === 'east') {
+    // الشرق يظهر tile.top عند 90
+    return tile.top === value ? 90 : 270;
   }
+  // الغرب يظهر tile.bottom عند 90
+  return tile.bottom === value ? 90 : 270;
+}
 
+function layoutArm(
+  tiles: ChainTile[],
+  inwardValue: (ct: ChainTile) => number,
+  startX: number,
+  bound: number,
+  turnSign: 1 | -1,
+  out: PositionedTile[]
+): void {
+  const cursor: ArmCursor = { x: startX, y: 0, dir: turnSign === 1 ? 1 : -1, turnSign };
+  // الذراع اليمنى تبدأ شرقاً، اليسرى غرباً
+  cursor.dir = bound > startX ? 1 : -1;
 
-  const result: PositionedTile[] = [];
+  for (const ct of tiles) {
+    const { tile } = ct;
+    const inward = inwardValue(ct);
 
-
-  let x = 0;
-  let y = 0;
-
-
-  // اتجاه الحركة
-  let direction:
-    | 'right'
-    | 'left'
-    | 'down'
-    | 'up'
-    = 'right';
-
-
-  let rowCount = 0;
-
-
-  /**
-   * القطعة الأولى
-   */
-  const first = chain[0];
-
-  result.push({
-    tile:first.tile,
-
-    x:0,
-    y:0,
-
-    w:first.tile.isDouble ? 1 : TILE_W,
-    h:first.tile.isDouble ? 2 : TILE_H,
-
-    rotation:first.tile.isDouble
-      ? 0
-      : 0,
-
-    isDouble:first.tile.isDouble,
-  });
-
-
-  x = first.tile.isDouble ? 1 : 2;
-
-
-
-  /**
-   * باقي القطع
-   */
-  for(let i=1;i<chain.length;i++){
-
-    const ct = chain[i];
-
-
-    const previous =
-      chain[i-1];
-
-
-    const entry =
-      ct.side === 'right'
-        ? previous.right
-        : previous.left;
-
-
-
-    let w =
-      ct.tile.isDouble
-        ? 1
-        : TILE_W;
-
-    let h =
-      ct.tile.isDouble
-        ? 2
-        : TILE_H;
-
-
-
-    let rotation = 0;
-
-
-
-    /*
-      الدوبل يعامل كقطعة رأسية
-    */
-    if(ct.tile.isDouble){
-
-      if(direction==='right'){
-
-        result.push({
-          tile:ct.tile,
-          x,
-          y:y-0.5,
-          w,
-          h,
-          rotation:0,
-          isDouble:true
-        });
-
-        x += 1;
-
-      }
-      else if(direction==='left'){
-
-        result.push({
-          tile:ct.tile,
-          x:x-1,
-          y:y-0.5,
-          w,
-          h,
-          rotation:0,
-          isDouble:true
-        });
-
-        x -= 1;
-      }
-
+    if (tile.isDouble) {
+      // الدوبل يوضع عمودياً ولا يكسر ترتيب الـ Snake
+      const w = 1;
+      const h = 2;
+      const x = cursor.dir === 1 ? cursor.x : cursor.x - 1;
+      const y = cursor.y - 0.5;
+      out.push({ tile, x, y, w, h, rotation: 0, isDouble: true });
+      cursor.x += cursor.dir * 1;
       continue;
     }
 
+    // هل يلزم انعطاف؟ (قطعة أفقية تحتاج خليتين)
+    const nextEdge = cursor.x + cursor.dir * 2;
+    const needTurn =
+      (cursor.dir === 1 && nextEdge > bound) ||
+      (cursor.dir === -1 && nextEdge < bound);
 
-
-
-    /*
-      القطع الأفقية
-    */
-
-    if(direction==='right'){
-
-      if(rowCount >= MAX_ROW){
-
-        direction='down';
-        rowCount=0;
-      }
+    if (needTurn) {
+      // قطعة زاوية رأسية ثم انعكاس الاتجاه في صف جديد
+      const w = 1;
+      const h = 2;
+      const x = cursor.dir === 1 ? cursor.x : cursor.x - 1;
+      const y = cursor.turnSign === 1 ? cursor.y + 1 : cursor.y - 2;
+      // النصف المتصل بالقادم يظهر في الأعلى (قيمة الدخول)
+      const rotation = tile.top === inward ? 0 : 180;
+      out.push({ tile, x, y, w, h, rotation, isDouble: false });
+      // صف جديد
+      cursor.y += cursor.turnSign * 2;
+      cursor.dir = (cursor.dir * -1) as 1 | -1;
+      // الحافة الحرة الآن عند الجهة الأخرى من قطعة الزاوية
+      cursor.x = cursor.dir === 1 ? x + 1 : x;
+      continue;
     }
 
+    // قطعة أفقية عادية
+    const w = 2;
+    const h = 1;
+    const x = cursor.dir === 1 ? cursor.x : cursor.x - 2;
+    const y = cursor.y;
+    // الجهة المواجهة للقطعة السابقة يجب أن تظهر القيمة الداخلة
+    const face: 'east' | 'west' = cursor.dir === 1 ? 'west' : 'east';
+    const rotation = rotationFor(tile, inward, face);
+    out.push({ tile, x, y, w, h, rotation, isDouble: false });
+    cursor.x = nextEdge;
+  }
+}
 
-    if(direction==='left'){
+/** حساب التخطيط الكامل للسلسلة. */
+export function layoutChain(chain: ChainTile[]): SnakeLayout {
+  if (chain.length === 0) return { tiles: [], width: 0, height: 0 };
 
-      if(rowCount >= MAX_ROW){
+  const first = chain.find((ct) => ct.side === null) ?? chain[0];
+  const rightGroup = chain.filter((ct) => ct.side === 'right'); // ترتيب اللعب = من المركز للخارج
+  const leftGroup = chain.filter((ct) => ct.side === 'left').reverse(); // من المركز للخارج
 
-        direction='up';
-        rowCount=0;
-      }
-    }
+  const out: PositionedTile[] = [];
 
+  // القطعة الأولى في منتصف الطاولة
+  const firstIsDouble = first.tile.isDouble;
+  const firstW = firstIsDouble ? 1 : 2;
+  const firstH = firstIsDouble ? 2 : 1;
+  out.push({
+    tile: first.tile,
+    x: 0,
+    y: firstIsDouble ? -0.5 : 0,
+    w: firstW,
+    h: firstH,
+    rotation: firstIsDouble ? 0 : 90,
+    isDouble: firstIsDouble,
+  });
 
+  // الذراع اليمنى: تبدأ من الحافة اليمنى للقطعة الأولى، تنكسر للأسفل
+  layoutArm(rightGroup, (ct) => ct.left, firstW, ARM_LIMIT, 1, out);
+  // الذراع اليسرى: تبدأ من الحافة اليسرى، تنكسر للأعلى
+  layoutArm(leftGroup, (ct) => ct.right, 0, -ARM_LIMIT, -1, out);
 
-    if(direction==='right'){
-
-      rotation=getRotation(
-        ct,
-        entry,
-        true
-      );
-
-
-      result.push({
-        tile:ct.tile,
-        x,
-        y,
-        w,
-        h,
-        rotation,
-        isDouble:false
-      });
-
-
-      x += 2;
-      rowCount++;
-
-    }
-
-
-    else if(direction==='left'){
-
-      rotation=getRotation(
-        ct,
-        entry,
-        true
-      );
-
-
-      result.push({
-        tile:ct.tile,
-        x:x-2,
-        y,
-        w,
-        h,
-        rotation,
-        isDouble:false
-      });
-
-
-      x-=2;
-      rowCount++;
-
-    }
-
-
-
-    /*
-      الانعطاف للأسفل
-    */
-
-    else if(direction==='down'){
-
-      rotation=getRotation(
-        ct,
-        entry,
-        false
-      );
-
-
-      result.push({
-        tile:ct.tile,
-        x,
-        y:y+1,
-        w:1,
-        h:2,
-        rotation,
-        isDouble:false
-      });
-
-
-      y+=2;
-
-      direction='left';
-
-      rowCount=0;
-
-    }
-
-
-
-    /*
-      الانعطاف للأعلى
-    */
-
-    else if(direction==='up'){
-
-      rotation=getRotation(
-        ct,
-        entry,
-        false
-      );
-
-
-      result.push({
-        tile:ct.tile,
-        x:x-1,
-        y:y-2,
-        w:1,
-        h:2,
-        rotation,
-        isDouble:false
-      });
-
-
-      y-=2;
-
-      direction='right';
-
-      rowCount=0;
-
-    }
-
+  // تطبيع الإحداثيات لتبدأ من الصفر
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of out) {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x + p.w);
+    maxY = Math.max(maxY, p.y + p.h);
+  }
+  for (const p of out) {
+    p.x -= minX;
+    p.y -= minY;
   }
 
-
-
-  /*
-    إزالة الإحداثيات السالبة
-  */
-
-  let minX=Infinity;
-  let minY=Infinity;
-  let maxX=-Infinity;
-  let maxY=-Infinity;
-
-
-  for(const p of result){
-
-    minX=Math.min(minX,p.x);
-    minY=Math.min(minY,p.y);
-
-    maxX=Math.max(maxX,p.x+p.w);
-    maxY=Math.max(maxY,p.y+p.h);
-  }
-
-
-
-  for(const p of result){
-
-    p.x-=minX;
-    p.y-=minY;
-
-  }
-
-
-
-  return {
-
-    tiles:result,
-
-    width:maxX-minX,
-
-    height:maxY-minY,
-
-  };
-
+  return { tiles: out, width: maxX - minX, height: maxY - minY };
 }
