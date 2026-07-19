@@ -6,6 +6,8 @@ import GameScreen from '@/screens/GameScreen';
 import MatchEndScreen from '@/screens/MatchEndScreen';
 import SettingsScreen from '@/screens/SettingsScreen';
 import StatisticsScreen from '@/screens/StatisticsScreen';
+import NetworkLobby from '@/screens/NetworkLobby';
+import NetworkGame from '@/screens/NetworkGame';
 
 export default function App() {
   const { currentScreen } = useGameStore();
@@ -26,6 +28,10 @@ export default function App() {
         return <SettingsScreen />;
       case 'statistics':
         return <StatisticsScreen />;
+      case 'networkLobby':
+        return <NetworkLobby />;
+      case 'networkGame':
+        return <NetworkGame />;
       default:
         return <TitleScreen />;
     }
