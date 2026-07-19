@@ -6,13 +6,41 @@ export interface Tile {
   total: number;
 }
 
-export interface PlacedTile {
+/** قطعة موضوعة على السلسلة مع اتجاهها الحقيقي (left = قيمة الطرف الأيسر). */
+export interface ChainTile {
   tile: Tile;
-  x: number;
-  y: number;
-  rotation: number;
-  connectLeft: number;
-  connectRight: number;
+  left: number;
+  right: number;
+  /** الطرف الذي أُضيفت منه (null للقطعة الأولى) */
+  side: 'left' | 'right' | null;
+}
+
+export type EndSide = 'left' | 'right';
+
+export interface Move {
+  tileId: string;
+  side: EndSide;
+}
+
+export type GameVariant = 'block' | 'draw';
+
+export type AILevel = 'easy' | 'medium' | 'hard';
+
+export interface RoundResult {
+  winnerIndex: number;
+  points: number;
+  reason: 'domino' | 'blocked';
+}
+
+/** حالة الجولة — قابلة للتسلسل (JSON) للحفظ والمزامنة الشبكية. */
+export interface MatchState {
+  playerCount: number;
+  variant: GameVariant;
+  hands: Tile[][];
+  chain: ChainTile[];
+  boneyard: Tile[];
+  currentPlayer: number;
+  consecutivePasses: number;
 }
 
 export interface Player {
@@ -35,7 +63,9 @@ export type ScreenType =
   | 'matchEnd'
   | 'settings'
   | 'statistics'
-  | 'tutorial';
+  | 'tutorial'
+  | 'networkLobby'
+  | 'networkGame';
 
 export type Difficulty = 'veryEasy' | 'easy' | 'medium' | 'hard' | 'veryHard' | 'expert' | 'champion';
 
@@ -96,12 +126,23 @@ export const LEVELS: LevelConfig[] = [
 export const AI_NAMES = ['أحمد', 'سامي', 'خالد', 'عمر', 'فهد', 'ناصر', 'سعد', 'ماجد'];
 export const AI_NAMES_EN = ['Ahmed', 'Sami', 'Khaled', 'Omar', 'Fahd', 'Nasser', 'Saad', 'Majid'];
 
-export const DIFFICULTY_SETTINGS: Record<Difficulty, { thinkTimeMin: number; thinkTimeMax: number; mistakeRate: number; strategy: string }> = {
-  veryEasy: { thinkTimeMin: 2000, thinkTimeMax: 3000, mistakeRate: 0.3, strategy: 'random' },
-  easy: { thinkTimeMin: 2000, thinkTimeMax: 3000, mistakeRate: 0.2, strategy: 'basic' },
-  medium: { thinkTimeMin: 3000, thinkTimeMax: 4000, mistakeRate: 0.1, strategy: 'counting' },
-  hard: { thinkTimeMin: 4000, thinkTimeMax: 5000, mistakeRate: 0.05, strategy: 'tracking' },
-  veryHard: { thinkTimeMin: 5000, thinkTimeMax: 6000, mistakeRate: 0.02, strategy: 'advanced' },
-  expert: { thinkTimeMin: 6000, thinkTimeMax: 7000, mistakeRate: 0, strategy: 'perfect' },
-  champion: { thinkTimeMin: 7000, thinkTimeMax: 8000, mistakeRate: 0, strategy: 'champion' },
+/** ربط مستويات الصعوبة بمستويات الذكاء الثلاثة في المحرك */
+export const DIFFICULTY_AI_LEVEL: Record<Difficulty, AILevel> = {
+  veryEasy: 'easy',
+  easy: 'easy',
+  medium: 'medium',
+  hard: 'medium',
+  veryHard: 'hard',
+  expert: 'hard',
+  champion: 'hard',
+};
+
+export const DIFFICULTY_SETTINGS: Record<Difficulty, { thinkTimeMin: number; thinkTimeMax: number; aiLevel: AILevel }> = {
+  veryEasy: { thinkTimeMin: 900, thinkTimeMax: 1600, aiLevel: 'easy' },
+  easy: { thinkTimeMin: 900, thinkTimeMax: 1600, aiLevel: 'easy' },
+  medium: { thinkTimeMin: 1100, thinkTimeMax: 1900, aiLevel: 'medium' },
+  hard: { thinkTimeMin: 1200, thinkTimeMax: 2100, aiLevel: 'medium' },
+  veryHard: { thinkTimeMin: 1300, thinkTimeMax: 2300, aiLevel: 'hard' },
+  expert: { thinkTimeMin: 1400, thinkTimeMax: 2400, aiLevel: 'hard' },
+  champion: { thinkTimeMin: 1500, thinkTimeMax: 2500, aiLevel: 'hard' },
 };
