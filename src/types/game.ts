@@ -29,7 +29,7 @@ export type AILevel = 'easy' | 'medium' | 'hard';
 export interface RoundResult {
   winnerIndex: number;
   points: number;
-  reason: 'domino' | 'blocked';
+  reason: 'domino' | 'blocked' | 'blocked_tie'; // ✅ تم إضافة blocked_tie لمعالجة حالات التعادل
 }
 
 /** حالة الجولة — قابلة للتسلسل (JSON) للحفظ والمزامنة الشبكية. */
@@ -41,6 +41,14 @@ export interface MatchState {
   boneyard: Tile[];
   currentPlayer: number;
   consecutivePasses: number;
+  requiredFirstTileId: string | null; // ✅ الرمية الإجبارية الأولى لمنع تجاوز القواعد
+  missingSuits: number[][];           // ✅ ذاكرة الأرقام المفقودة عند اللاعبين لاستخدامها من قبل الـ AI
+  history: Array<{                    // ✅ سجل الأحداث التاريخي لدعم ميزات الـ Undo والـ Replay
+    type: 'move' | 'draw' | 'pass';
+    playerIndex: number;
+    move?: Move;
+    count?: number;
+  }>;
 }
 
 export interface Player {
