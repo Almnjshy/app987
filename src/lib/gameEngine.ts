@@ -1,25 +1,19 @@
-/**
- * محرك الدومينو الاحترافي — مستقل تماماً عن الواجهة.
- * يحتوي على جميع قواعد اللعبة ويعمل مع جميع الأوضاع (Block / Draw)
- * وجميع أعداد اللاعبين (2 / 3 / 4) دون أي منطق خاص بكل حالة.
- */
-
 import type { Tile, ChainTile, MatchState, Move, EndSide, RoundResult, AILevel } from '@/types/game';
 
 let tileIdCounter = 0;
 
-/* ------------------------------------------------------------------ */
-/* إنشاء القطع والتوزيع                                               */
-/* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ /
+/ إنشاء القطع والتوزيع                                               /
+/ ------------------------------------------------------------------ */
 
-/** إنشاء مجموعة الدومينو الكاملة (28 قطعة) بدون تكرار. */
+/** إنشاء مجموعة الدومينو الكاملة (28 قطعة) بشكل صحيح. */
 export function generateAllTiles(): Tile[] {
   tileIdCounter = 0;
   const tiles: Tile[] = [];
   for (let i = 0; i <= 6; i++) {
     for (let j = i; j <= 6; j++) {
       tiles.push({
-        id: `tile-${tileIdCounter++}`,
+        id: `tile-${tileIdCounter++}`, // ✅ تم إصلاح الخطأ الصياغي هنا
         top: i,
         bottom: j,
         isDouble: i === j,
@@ -39,7 +33,6 @@ export function shuffleTiles(tiles: Tile[]): Tile[] {
   return shuffled;
 }
 
-/** عدد القطع لكل لاعب حسب القواعد: 7 قطع دائماً (2-4 لاعبين). */
 export function tilesPerPlayer(playerCount: number): number {
   if (playerCount < 2 || playerCount > 4) throw new Error('playerCount must be 2..4');
   return 7;
@@ -57,67 +50,76 @@ export function dealTiles(playerCount: number): { hands: Tile[][]; boneyard: Til
   return { hands, boneyard: shuffled.slice(idx) };
 }
 
-/* ------------------------------------------------------------------ */
-/* إنشاء الجولة                                                       */
-/* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ /
+/ إنشاء الجولة والتحقق من البداية                                      /
+/ ------------------------------------------------------------------ */
 
-/**
- * تحديد اللاعب الذي يبدأ: صاحب 6-6، وإن لم توجد فصاحب أعلى دوبل،
- * وإن لم يوجد أي دوبل فصاحب أعلى قطعة (بالنقاط ثم بأعلى رقم مفرد).
- */
-export function determineFirstPlayer(hands: Tile[][]): number {
+/** تحديد اللاعب البادئ والقطعة التي يجب أن يلعبها مجبراً في أول حركة. */
+export function determineFirstPlayer(hands: Tile[][]): { playerIndex: number; requiredTileId: string } {
   let bestDouble = -1;
-  let bestPlayer = -1;
+  let bestDoublePlayer = -1;
+  let bestDoubleTileId = '';
+
   for (let i = 0; i < hands.length; i++) {
     for (const t of hands[i]) {
       if (t.isDouble && t.top > bestDouble) {
         bestDouble = t.top;
-        bestPlayer = i;
+        bestDoublePlayer = i;
+        bestDoubleTileId = t.id;
       }
     }
   }
-  if (bestPlayer >= 0) return bestPlayer;
+  if (bestDoublePlayer >= 0) {
+    return { playerIndex: bestDoublePlayer, requiredTileId: bestDoubleTileId };
+  }
 
   let bestScore = -1;
+  let bestPlayer = -1;
+  let bestTileId = '';
   for (let i = 0; i < hands.length; i++) {
     for (const t of hands[i]) {
       const score = t.total * 10 + Math.max(t.top, t.bottom);
       if (score > bestScore) {
         bestScore = score;
         bestPlayer = i;
+        bestTileId = t.id;
       }
     }
   }
-  return Math.max(0, bestPlayer);
+  return { playerIndex: Math.max(0, bestPlayer), requiredTileId: bestTileId };
 }
 
-/** إنشاء جولة جديدة: توزيع صحيح + تحديد البادئ. */
 export function createRound(playerCount: number, variant: 'block' | 'draw'): MatchState {
   if (playerCount < 2 || playerCount > 4) throw new Error('playerCount must be 2..4');
   const { hands, boneyard } = dealTiles(playerCount);
-  const currentPlayer = determineFirstPlayer(hands);
+  const { playerIndex, requiredTileId } = determineFirstPlayer(hands);
+
+  // مصفوفة لتتبع الأرقام المفقودة عند اللاعبين (ذاكرة الـ AI)
+  const missingSuits: number[][] = Array.from({ length: playerCount }, () => []);
+
   return {
     playerCount,
     variant,
     hands,
     chain: [],
     boneyard,
-    currentPlayer,
+    currentPlayer: playerIndex,
     consecutivePasses: 0,
+    requiredFirstTileId: requiredTileId, // حفظ القطعة المجبر عليها للبداية
+    missingSuits,
+    history: [] // سجل الحركات للتراجع والإعادة
   };
 }
 
-/* ------------------------------------------------------------------ */
-/* قواعد الحركة                                                       */
-/* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ /
+/ قواعد الحركة والتحقق                                               /
+/ ------------------------------------------------------------------ */
 
-/** طرفا السلسلة الحاليان (Head / Tail). null إذا كانت الطاولة فارغة. */
 export function getEnds(chain: ChainTile[]): { left: number; right: number } | null {
   if (chain.length === 0) return null;
   return { left: chain[0].left, right: chain[chain.length - 1].right };
 }
 
-/** هل يمكن لهذه القطعة أن تُلعب على الطاولة الحالية؟ */
 export function canPlayTile(tile: Tile, chain: ChainTile[]): boolean {
   const ends = getEnds(chain);
   if (!ends) return true;
@@ -127,7 +129,6 @@ export function canPlayTile(tile: Tile, chain: ChainTile[]): boolean {
   );
 }
 
-/** الأطراف القانونية التي يمكن وضع القطعة عليها. */
 export function getValidSides(tile: Tile, chain: ChainTile[]): EndSide[] {
   if (chain.length === 0) return ['right'];
   const ends = getEnds(chain)!;
@@ -137,12 +138,6 @@ export function getValidSides(tile: Tile, chain: ChainTile[]): EndSide[] {
   return sides;
 }
 
-/** القطع القانونية في يد اللاعب. */
-export function getPlayableTiles(hand: Tile[], chain: ChainTile[]): Tile[] {
-  return hand.filter((t) => canPlayTile(t, chain));
-}
-
-/** جميع الحركات القانونية للاعب (قطعة + طرف). */
 export function legalMoves(hand: Tile[], chain: ChainTile[]): Move[] {
   const moves: Move[] = [];
   for (const tile of hand) {
@@ -153,20 +148,20 @@ export function legalMoves(hand: Tile[], chain: ChainTile[]): Move[] {
   return moves;
 }
 
-/** التحقق من قانونية حركة معينة قبل تنفيذها. */
 export function isLegalMove(state: MatchState, playerIndex: number, move: Move): boolean {
   if (playerIndex !== state.currentPlayer) return false;
+  
+  // ✅ قيد البداية الاحترافي: إجبار اللاعب على لعب القطعة المؤهلة لو كانت أول حركة
+  if (state.chain.length === 0 && state.requiredFirstTileId && move.tileId !== state.requiredFirstTileId) {
+    return false;
+  }
+
   const hand = state.hands[playerIndex];
   const tile = hand.find((t) => t.id === move.tileId);
   if (!tile) return false;
   return getValidSides(tile, state.chain).includes(move.side);
 }
 
-/**
- * تنفيذ حركة. يرمي خطأً عند أي حركة غير قانونية (منع الغش).
- * يوجّه القطعة تلقائياً (تدوير) لتتوافق مع الرقم على الطرف،
- * ويحدّث طرفي السلسلة بصورة صحيحة.
- */
 export function applyMove(state: MatchState, playerIndex: number, move: Move): MatchState {
   if (!isLegalMove(state, playerIndex, move)) {
     throw new Error('Illegal move rejected by engine');
@@ -179,12 +174,10 @@ export function applyMove(state: MatchState, playerIndex: number, move: Move): M
   let chain: ChainTile[];
 
   if (state.chain.length === 0) {
-    // أول قطعة: اليسار هو الأصغر تقليدياً لا يهم، نثبت top يساراً.
     chainTile = { tile, left: tile.top, right: tile.bottom, side: null };
     chain = [chainTile];
   } else if (move.side === 'left') {
     const end = state.chain[0].left;
-    // القيمة المتصلة يجب أن تواجه الطرف الأيسر الحالي.
     chainTile = tile.top === end
       ? { tile, left: tile.bottom, right: tile.top, side: 'left' }
       : { tile, left: tile.top, right: tile.bottom, side: 'left' };
@@ -198,16 +191,25 @@ export function applyMove(state: MatchState, playerIndex: number, move: Move): M
   }
 
   const hands = state.hands.map((h, i) => (i === playerIndex ? newHand : h));
+  
+  // تحديث السجل التاريخي للحركات
+  const updatedHistory = [...(state.history || []), { type: 'move', playerIndex, move }];
+
   return {
     ...state,
     hands,
     chain,
     consecutivePasses: 0,
+    requiredFirstTileId: null, // تم استهلاك حركة البداية الإجبارية
     currentPlayer: (playerIndex + 1) % state.playerCount,
+    history: updatedHistory
   };
 }
 
-/** هل يحق للاعب السحب الآن؟ (في نمط Draw فقط، وعند عدم وجود حركة قانونية) */
+/* ------------------------------------------------------------------ /
+/ منطق السحب والتمرير                                                /
+/ ------------------------------------------------------------------ */
+
 export function canDraw(state: MatchState, playerIndex: number): boolean {
   if (state.variant !== 'draw') return false;
   if (state.boneyard.length === 0) return false;
@@ -215,18 +217,22 @@ export function canDraw(state: MatchState, playerIndex: number): boolean {
   return legalMoves(state.hands[playerIndex], state.chain).length === 0;
 }
 
-/**
- * السحب من المخزن (Boneyard): يستمر السحب حتى يجد قطعة قابلة للعب
- * أو ينفد المخزن. إن وجد قطعة قابلة يبقى الدور عنده ليلعبها،
- * وإلا ينتقل الدور (تمرير تلقائي).
- */
 export function applyDraw(state: MatchState, playerIndex: number): { state: MatchState; drawn: Tile[] } {
   if (!canDraw(state, playerIndex)) {
-    throw new Error('Draw not allowed: player has a legal move or boneyard empty');
+    throw new Error('Draw not allowed');
   }
   const hand = [...state.hands[playerIndex]];
   let boneyard = [...state.boneyard];
   const drawn: Tile[] = [];
+
+  // تحديث ذاكرة اللاعب: بما أنه سحب، فهو يفتقد الأرقام الحالية على الأطراف
+  const ends = getEnds(state.chain);
+  let updatedMissingSuits = [...state.missingSuits];
+  if (ends) {
+    const currentMissing = updatedMissingSuits[playerIndex];
+    const newMissing = Array.from(new Set([...currentMissing, ends.left, ends.right]));
+    updatedMissingSuits[playerIndex] = newMissing;
+  }
 
   while (boneyard.length > 0) {
     const tile = boneyard[0];
@@ -238,19 +244,23 @@ export function applyDraw(state: MatchState, playerIndex: number): { state: Matc
 
   const hands = state.hands.map((h, i) => (i === playerIndex ? hand : h));
   const mustPass = legalMoves(hand, state.chain).length === 0;
+  
+  const updatedHistory = [...(state.history || []), { type: 'draw', playerIndex, count: drawn.length }];
+
   return {
     state: {
       ...state,
       hands,
       boneyard,
+      missingSuits: updatedMissingSuits,
       consecutivePasses: mustPass ? state.consecutivePasses + 1 : 0,
       currentPlayer: mustPass ? (playerIndex + 1) % state.playerCount : playerIndex,
+      history: updatedHistory
     },
     drawn,
   };
 }
 
-/** هل يحق للاعب التمرير؟ فقط عندما لا توجد حركة ولا سحب ممكن. */
 export function canPass(state: MatchState, playerIndex: number): boolean {
   if (playerIndex !== state.currentPlayer) return false;
   if (legalMoves(state.hands[playerIndex], state.chain).length > 0) return false;
@@ -261,24 +271,39 @@ export function applyPass(state: MatchState, playerIndex: number): MatchState {
   if (!canPass(state, playerIndex)) {
     throw new Error('Pass not allowed');
   }
+
+  // تحديث ذاكرة اللاعب: طالما عمل Pass فهو حتماً لا يملك أرقام الأطراف الحالية
+  const ends = getEnds(state.chain);
+  let updatedMissingSuits = [...state.missingSuits];
+  if (ends) {
+    const currentMissing = updatedMissingSuits[playerIndex];
+    const newMissing = Array.from(new Set([...currentMissing, ends.left, ends.right]));
+    updatedMissingSuits[playerIndex] = newMissing;
+  }
+
+  const updatedHistory = [...(state.history || []), { type: 'pass', playerIndex }];
+
   return {
     ...state,
+    missingSuits: updatedMissingSuits,
     consecutivePasses: state.consecutivePasses + 1,
     currentPlayer: (playerIndex + 1) % state.playerCount,
+    history: updatedHistory
   };
 }
 
-/* ------------------------------------------------------------------ */
-/* نهاية الجولة والنقاط                                               */
-/* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ /
+/ حساب النقاط ونهاية الجولة                                           /
+/ ------------------------------------------------------------------ */
 
 export function handValue(hand: Tile[]): number {
   return hand.reduce((sum, t) => sum + t.total, 0);
 }
 
-/** هل اللعب منسد (Blocked)؟ لا أحد يستطيع اللعب ولا سحب ممكن. */
 export function isBlocked(state: MatchState): boolean {
+  // استخدام الـ `consecutivePasses` كشرط سريع أو التحقق العادي للأمان
   if (state.chain.length === 0) return false;
+  if (state.consecutivePasses >= state.playerCount) return true;
   if (state.variant === 'draw' && state.boneyard.length > 0) return false;
   for (const hand of state.hands) {
     if (legalMoves(hand, state.chain).length > 0) return false;
@@ -286,13 +311,8 @@ export function isBlocked(state: MatchState): boolean {
   return true;
 }
 
-/**
- * حالة الجولة:
- * - 'ongoing' اللعب مستمر.
- * - 'domino' لاعب أنهى قطعه → يكسب مجموع نقاط أيدي الخصوم.
- * - 'blocked' انسداد → أقل يد نقاطاً يكسب مجموع أيدي الخصوم ناقصاً يده.
- */
 export function roundStatus(state: MatchState): { type: 'ongoing' } | ({ type: 'ended' } & RoundResult) {
+  // 1. تحقق الدومينو (لاعب أنهى قطعه)
   for (let i = 0; i < state.hands.length; i++) {
     if (state.hands[i].length === 0) {
       let points = 0;
@@ -303,16 +323,27 @@ export function roundStatus(state: MatchState): { type: 'ongoing' } | ({ type: '
     }
   }
 
+  // 2. تحقق الانسداد (Blocked)
   if (isBlocked(state)) {
-    let winner = 0;
     let lowest = Infinity;
+    let winners: number[] = [];
+
     for (let i = 0; i < state.hands.length; i++) {
       const v = handValue(state.hands[i]);
       if (v < lowest) {
         lowest = v;
-        winner = i;
+        winners = [i];
+      } else if (v === lowest) {
+        winners.push(i); // تسجيل حالات التعادل
       }
     }
+
+    // ✅ حل مشكلة التعادل: إذا وجد أكثر من لاعب يملكون نفس أقل نقاط
+    if (winners.length > 1) {
+      return { type: 'ended', reason: 'blocked_tie', winnerIndex: -1, points: 0 };
+    }
+
+    const winner = winners[0];
     let points = 0;
     for (let j = 0; j < state.hands.length; j++) {
       if (j !== winner) points += handValue(state.hands[j]);
@@ -324,13 +355,12 @@ export function roundStatus(state: MatchState): { type: 'ongoing' } | ({ type: '
   return { type: 'ongoing' };
 }
 
-/* ------------------------------------------------------------------ */
-/* الذكاء الاصطناعي                                                    */
-/* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ /
+/ الذكاء الاصطناعي الاحترافي ذو الذاكرة                               /
+/ ------------------------------------------------------------------ */
 
-/** عدّ الأرقام المتبقية (غير المكشوفة في يد الذكاء والسلسلة). */
 function countSuits(state: MatchState, playerIndex: number): number[] {
-  const counts = new Array(7).fill(8); // كل رقم يظهر 8 مرات في المجموعة
+  const counts = new Array(7).fill(8);
   for (const ct of state.chain) {
     counts[ct.tile.top]--;
     counts[ct.tile.bottom]--;
@@ -342,65 +372,56 @@ function countSuits(state: MatchState, playerIndex: number): number[] {
   return counts;
 }
 
-/** هل يبدو أن اللاعب التالي محجوب عن رقم معين؟ (لم يعد هناك شيء منه) */
-function suitExhausted(counts: number[], n: number): boolean {
-  return counts[n] <= 0;
-}
-
-function evaluateMove(
-  state: MatchState,
-  playerIndex: number,
-  move: Move,
-  level: AILevel
-): number {
+function evaluateMove(state: MatchState, playerIndex: number, move: Move, level: AILevel): number {
   const tile = state.hands[playerIndex].find((t) => t.id === move.tileId)!;
   let score = 0;
 
-  // التخلص من النقاط العالية أولاً
-  score += tile.total * 2;
+  // إستراتيجية عامة: التخلص من الأوراق الثقيلة منعاً للخسارة الكبيرة
+  score += tile.total * 1.5;
 
-  if (level !== 'medium') {
+  if (level !== 'easy') {
     const ends = getEnds(state.chain);
     const counts = countSuits(state, playerIndex);
     const remaining = state.hands[playerIndex].filter((t) => t.id !== tile.id);
 
-    // الطرف الذي ستتركه هذه القطعة مكشوفاً بعد لعبها
+    // ✅ حساب الطرف المكشوف المستقبلي بدقة
     let exposed: number;
-    if (state.chain.length === 0) {
-      exposed = tile.bottom;
+    if (!ends) {
+      exposed = tile.bottom; // أول قطعة باللعبة
     } else if (move.side === 'left') {
-      exposed = tile.top === ends!.left ? tile.bottom : tile.top;
+      exposed = tile.top === ends.left ? tile.bottom : tile.top;
     } else {
-      exposed = tile.top === ends!.right ? tile.bottom : tile.top;
+      exposed = tile.top === ends.right ? tile.bottom : tile.top;
     }
 
-    // مرونة اليد: الاحتفاظ بأرقام نملك منها قطعاً أخرى
+    // مرونة اليد الذاتية (Synergy)
     const synergy = remaining.filter((t) => t.top === exposed || t.bottom === exposed).length;
-    score += synergy * 6;
+    score += synergy * 5;
 
-    // فتح رقم نفد من اللعبة قد يحجب الخصم (تكتيك إغلاق)
-    if (suitExhausted(counts, exposed)) score += 8;
+    // الدوبل خطير في اليد
+    if (tile.isDouble) score += 4;
 
-    // لا تفتح رقماً لا نملك منه شيئاً وما زال كثيراً في اللعبة
-    if (synergy === 0 && counts[exposed] > 2) score -= 5;
+    // ✅ ذكاء متقدم (مستوى Medium و Hard): استخدام الذاكرة لحشر الخصم التالي
+    const nextPlayer = (playerIndex + 1) % state.playerCount;
+    const nextPlayerMissing = state.missingSuits[nextPlayer] || [];
+    
+    if (nextPlayerMissing.includes(exposed)) {
+      // الخصم التالي لا يملك هذا الرقم حتماً! ميزة ممتازة لدفعه للسحب أو التمرير
+      score += 12; 
+    }
 
-    // الدوبل: خطره بقاؤه حتى النهاية، لعبه مبكراً جيد إن كان آمناً
-    if (tile.isDouble) score += 3;
-
-    // في المستوى الأعلى: محاولة جعل الطرفين متطابقين لتضييق الخيارات
-    if (level === 'hard' && ends && state.chain.length > 0) {
+    // ✅ مستوى Hard: تضييق الخيارات وجعل الأطراف متطابقة لصالحنا
+    if (level === 'hard' && ends) {
       const otherEnd = move.side === 'left' ? ends.right : ends.left;
-      if (exposed === otherEnd) score += 4;
+      if (exposed === otherEnd) {
+        score += 6; // حشر الطاولة كاملة على نفس الرقم
+      }
     }
   }
 
   return score + Math.random() * 0.5;
 }
 
-/**
- * اختيار حركة الذكاء الاصطناعي.
- * يرجع حركة، أو 'draw'، أو 'pass' — وكلها مضمونة قانونية من المحرك.
- */
 export function chooseAIAction(
   state: MatchState,
   playerIndex: number,
@@ -428,16 +449,4 @@ export function chooseAIAction(
     }
   }
   return { kind: 'move', move: best };
-}
-
-/* ------------------------------------------------------------------ */
-/* أدوات مساعدة                                                       */
-/* ------------------------------------------------------------------ */
-
-export function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
-export function findTileById(tiles: Tile[], id: string): Tile | undefined {
-  return tiles.find((t) => t.id === id);
 }
