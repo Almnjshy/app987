@@ -5,12 +5,21 @@ import type {
   GameSettings,
   GameProgress,
   PowerUp,
-  Tile,
   Player,
-  PlacedTile,
   LevelConfig,
+  MatchState,
 } from '@/types/game';
 import { LEVELS } from '@/types/game';
+
+export interface SavedGame {
+  match: MatchState;
+  matchScores: number[];
+  playerNames: string[];
+  playerAvatars: string[];
+  level: number;
+  mode: GameMode;
+  targetScore: number;
+}
 
 interface GameState {
   // Screen
@@ -27,35 +36,29 @@ interface GameState {
   currentLevel: number;
   setCurrentLevel: (level: number) => void;
 
+  // Tournament (1 = ربع النهائي ... 3 = النهائي)
+  tournamentStage: number;
+  setTournamentStage: (stage: number) => void;
+
   // Game data
   players: Player[];
   setPlayers: (players: Player[] | ((prev: Player[]) => Player[])) => void;
-  boardTiles: PlacedTile[];
-  setBoardTiles: (tiles: PlacedTile[] | ((prev: PlacedTile[]) => PlacedTile[])) => void;
-  boneyard: Tile[];
-  setBoneyard: (tiles: Tile[] | ((prev: Tile[]) => Tile[])) => void;
-  currentPlayerIndex: number;
-  setCurrentPlayerIndex: (index: number) => void;
+  match: MatchState | null;
+  setMatch: (match: MatchState | null | ((prev: MatchState | null) => MatchState | null)) => void;
   matchScores: number[];
   setMatchScores: (scores: number[] | ((prev: number[]) => number[])) => void;
-  turnTimer: number;
-  setTurnTimer: (time: number) => void;
-  isTimerRunning: boolean;
-  setIsTimerRunning: (running: boolean) => void;
   roundWinner: string | null;
   setRoundWinner: (winner: string | null) => void;
   matchWinner: string | null;
   setMatchWinner: (winner: string | null) => void;
   isPaused: boolean;
   setIsPaused: (paused: boolean) => void;
-  canUndo: boolean;
-  setCanUndo: (can: boolean) => void;
-  lastMove: { tile: Tile; fromBoneyard: boolean } | null;
-  setLastMove: (move: { tile: Tile; fromBoneyard: boolean } | null) => void;
   gameMessage: string;
   setGameMessage: (msg: string) => void;
-  animatingTiles: string[];
-  setAnimatingTiles: (tiles: string[]) => void;
+
+  // Save / resume
+  hasSavedGame: boolean;
+  setHasSavedGame: (has: boolean) => void;
 
   // Power-ups
   powerUps: PowerUp[];
@@ -70,19 +73,13 @@ interface GameState {
   progress: GameProgress;
   updateProgress: (progress: Partial<GameProgress>) => void;
   completeLevel: (level: number, stars: number, score: number) => void;
+  addLoss: () => void;
 
   // Level config
   getCurrentLevelConfig: () => LevelConfig;
 
-  // Stats
-  gamesPlayed: number;
-  gamesWon: number;
-  setGamesPlayed: (n: number) => void;
-  setGamesWon: (n: number) => void;
-
   // Actions
   resetMatch: () => void;
-  resetAll: () => void;
 }
 
 const defaultSettings: GameSettings = {
@@ -109,6 +106,15 @@ const defaultPowerUps: PowerUp[] = [
   { type: 'hint', name: 'Hint', nameAr: 'تلميح', icon: 'lightbulb', uses: 3, maxUses: 3 },
 ];
 
+function loadJSON<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export const useGameStore = create<GameState>((set, get) => ({
   // Screen
   currentScreen: 'title',
@@ -124,43 +130,37 @@ export const useGameStore = create<GameState>((set, get) => ({
   currentLevel: 1,
   setCurrentLevel: (level: number) => set({ currentLevel: level }),
 
+  // Tournament
+  tournamentStage: 1,
+  setTournamentStage: (stage: number) => set({ tournamentStage: stage }),
+
   // Game data
   players: [],
   setPlayers: (players: Player[] | ((prev: Player[]) => Player[])) => set((s: GameState) => ({
     players: typeof players === 'function' ? players(s.players) : players,
   })),
-  boardTiles: [],
-  setBoardTiles: (tiles: PlacedTile[] | ((prev: PlacedTile[]) => PlacedTile[])) => set((s: GameState) => ({
-    boardTiles: typeof tiles === 'function' ? tiles(s.boardTiles) : tiles,
+  match: null,
+  setMatch: (match) => set((s: GameState) => ({
+    match: typeof match === 'function' ? match(s.match) : match,
   })),
-  boneyard: [],
-  setBoneyard: (tiles: Tile[] | ((prev: Tile[]) => Tile[])) => set((s: GameState) => ({
-    boneyard: typeof tiles === 'function' ? tiles(s.boneyard) : tiles,
-  })),
-  currentPlayerIndex: 0,
-  setCurrentPlayerIndex: (index: number) => set({ currentPlayerIndex: index }),
   matchScores: [0, 0, 0, 0],
-  setMatchScores: (scores: number[] | ((prev: number[]) => number[])) => set((s: GameState) => ({
+  setMatchScores: (scores) => set((s: GameState) => ({
     matchScores: typeof scores === 'function' ? scores(s.matchScores) : scores,
   })),
-  turnTimer: 30,
-  setTurnTimer: (time: number) => set({ turnTimer: time }),
-  isTimerRunning: false,
-  setIsTimerRunning: (running: boolean) => set({ isTimerRunning: running }),
   roundWinner: null,
   setRoundWinner: (winner: string | null) => set({ roundWinner: winner }),
   matchWinner: null,
   setMatchWinner: (winner: string | null) => set({ matchWinner: winner }),
   isPaused: false,
   setIsPaused: (paused: boolean) => set({ isPaused: paused }),
-  canUndo: false,
-  setCanUndo: (can: boolean) => set({ canUndo: can }),
-  lastMove: null,
-  setLastMove: (move: { tile: Tile; fromBoneyard: boolean } | null) => set({ lastMove: move }),
   gameMessage: '',
   setGameMessage: (msg: string) => set({ gameMessage: msg }),
-  animatingTiles: [],
-  setAnimatingTiles: (tiles: string[]) => set({ animatingTiles: tiles }),
+
+  // Save / resume
+  hasSavedGame: (() => {
+    try { return !!localStorage.getItem('domino_save'); } catch { return false; }
+  })(),
+  setHasSavedGame: (has: boolean) => set({ hasSavedGame: has }),
 
   // Power-ups
   powerUps: [...defaultPowerUps],
@@ -172,30 +172,39 @@ export const useGameStore = create<GameState>((set, get) => ({
   resetPowerUps: () => set({ powerUps: defaultPowerUps.map((p: PowerUp) => ({ ...p, uses: p.maxUses })) }),
 
   // Settings
-  settings: { ...defaultSettings },
-  updateSettings: (newSettings: Partial<GameSettings>) => set((s: GameState) => ({
-    settings: { ...s.settings, ...newSettings },
-  })),
+  settings: loadJSON('domino_settings', defaultSettings),
+  updateSettings: (newSettings: Partial<GameSettings>) => set((s: GameState) => {
+    const settings = { ...s.settings, ...newSettings };
+    try { localStorage.setItem('domino_settings', JSON.stringify(settings)); } catch { /* ignore */ }
+    return { settings };
+  }),
 
   // Progress
-  progress: { ...defaultProgress },
-  updateProgress: (newProgress: Partial<GameProgress>) => set((s: GameState) => ({
-    progress: { ...s.progress, ...newProgress },
-  })),
+  progress: loadJSON('domino_progress', defaultProgress),
+  updateProgress: (newProgress: Partial<GameProgress>) => set((s: GameState) => {
+    const progress = { ...s.progress, ...newProgress };
+    try { localStorage.setItem('domino_progress', JSON.stringify(progress)); } catch { /* ignore */ }
+    return { progress };
+  }),
   completeLevel: (level: number, stars: number, score: number) => set((s: GameState) => {
     const currentStars = s.progress.levelStars[level] || 0;
     const newStars = Math.max(currentStars, stars);
     const newUnlocked = Math.max(s.progress.unlockedLevel, level + 1);
-    return {
-      progress: {
-        ...s.progress,
-        unlockedLevel: Math.min(newUnlocked, 10),
-        levelStars: { ...s.progress.levelStars, [level]: newStars },
-        totalScore: s.progress.totalScore + score,
-        totalWins: s.progress.totalWins + 1,
-        highestScore: Math.max(s.progress.highestScore, score),
-      },
+    const progress = {
+      ...s.progress,
+      unlockedLevel: Math.min(newUnlocked, 10),
+      levelStars: { ...s.progress.levelStars, [level]: newStars },
+      totalScore: s.progress.totalScore + score,
+      totalWins: s.progress.totalWins + 1,
+      highestScore: Math.max(s.progress.highestScore, score),
     };
+    try { localStorage.setItem('domino_progress', JSON.stringify(progress)); } catch { /* ignore */ }
+    return { progress };
+  }),
+  addLoss: () => set((s: GameState) => {
+    const progress = { ...s.progress, totalLosses: s.progress.totalLosses + 1 };
+    try { localStorage.setItem('domino_progress', JSON.stringify(progress)); } catch { /* ignore */ }
+    return { progress };
   }),
 
   // Level config
@@ -204,53 +213,14 @@ export const useGameStore = create<GameState>((set, get) => ({
     return LEVELS[level - 1] || LEVELS[0];
   },
 
-  // Stats
-  gamesPlayed: 0,
-  gamesWon: 0,
-  setGamesPlayed: (n: number) => set({ gamesPlayed: n }),
-  setGamesWon: (n: number) => set({ gamesWon: n }),
-
   // Actions
   resetMatch: () => set({
-    boardTiles: [],
-    boneyard: [],
-    currentPlayerIndex: 0,
+    players: [],
+    match: null,
     matchScores: [0, 0, 0, 0],
-    turnTimer: 30,
-    isTimerRunning: false,
     roundWinner: null,
     matchWinner: null,
     isPaused: false,
-    canUndo: false,
-    lastMove: null,
     gameMessage: '',
-    animatingTiles: [],
-    players: [],
-  }),
-
-  resetAll: () => set({
-    currentScreen: 'title',
-    previousScreen: 'title',
-    gameMode: 'ai',
-    currentLevel: 1,
-    players: [],
-    boardTiles: [],
-    boneyard: [],
-    currentPlayerIndex: 0,
-    matchScores: [0, 0, 0, 0],
-    turnTimer: 30,
-    isTimerRunning: false,
-    roundWinner: null,
-    matchWinner: null,
-    isPaused: false,
-    canUndo: false,
-    lastMove: null,
-    gameMessage: '',
-    animatingTiles: [],
-    powerUps: defaultPowerUps.map((p: PowerUp) => ({ ...p, uses: p.maxUses })),
-    settings: { ...defaultSettings },
-    progress: { ...defaultProgress },
-    gamesPlayed: 0,
-    gamesWon: 0,
   }),
 }));
