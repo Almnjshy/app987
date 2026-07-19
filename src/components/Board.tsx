@@ -1,60 +1,39 @@
-import { memo, useRef, useEffect, useState } from 'react';
-import type { PlacedTile } from '@/types/game';
+import { memo, useMemo, useRef, useState, useEffect } from 'react';
+import type { ChainTile, EndSide } from '@/types/game';
+import { layoutChain } from '@/lib/snakeLayout';
 import { DominoTile } from './DominoTile';
 
 interface BoardProps {
-  boardTiles: PlacedTile[];
+  chain: ChainTile[];
   className?: string;
+  /** تفعيل تمييز الطرفين القانونيين للقطعة المختارة */
+  highlightEnds?: EndSide[];
+  /** النقر على طرف لوضع القطعة المختارة */
+  onSelectSide?: (side: EndSide) => void;
+  /** معرّفات مناطق الإسقاط للسحب والإفلات */
+  dropSideRefs?: React.MutableRefObject<{ left: HTMLDivElement | null; right: HTMLDivElement | null }>;
 }
 
-function BoardComponent({ boardTiles, className = '' }: BoardProps) {
+const CELL = 30; // بكسل لكل خلية (سمك القطعة)
+
+function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSide, dropSideRefs }: BoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [scrollX, setScrollX] = useState(0);
-  const isDragging = useRef(false);
-  const dragStart = useRef(0);
-  const scrollStart = useRef(0);
+  const [containerSize, setContainerSize] = useState({ w: 600, h: 300 });
 
   useEffect(() => {
-    if (containerRef.current && boardTiles.length > 6) {
-      const container = containerRef.current;
-      const maxScroll = container.scrollWidth - container.clientWidth;
-      setScrollX(maxScroll / 2);
-    }
-  }, [boardTiles.length]);
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      setContainerSize({ w: el.clientWidth, h: el.clientHeight });
+    });
+    ro.observe(el);
+    setContainerSize({ w: el.clientWidth, h: el.clientHeight });
+    return () => ro.disconnect();
+  }, []);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    isDragging.current = true;
-    dragStart.current = e.clientX;
-    scrollStart.current = scrollX;
-  };
+  const layout = useMemo(() => layoutChain(chain), [chain]);
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging.current) return;
-    const delta = e.clientX - dragStart.current;
-    setScrollX(scrollStart.current - delta);
-  };
-
-  const handleMouseUp = () => {
-    isDragging.current = false;
-  };
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    isDragging.current = true;
-    dragStart.current = e.touches[0].clientX;
-    scrollStart.current = scrollX;
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDragging.current) return;
-    const delta = e.touches[0].clientX - dragStart.current;
-    setScrollX(scrollStart.current - delta);
-  };
-
-  const handleTouchEnd = () => {
-    isDragging.current = false;
-  };
-
-  if (boardTiles.length === 0) {
+  if (chain.length === 0) {
     return (
       <div
         className={`flex items-center justify-center ${className}`}
@@ -64,68 +43,108 @@ function BoardComponent({ boardTiles, className = '' }: BoardProps) {
           border: '2px dashed rgba(201, 168, 76, 0.2)',
         }}
       >
-        <span className="text-[#B8A080] text-sm">ابدأ اللعب</span>
+        <span className="text-[#B8A080] text-sm font-arabic">ابدأ اللعب</span>
       </div>
     );
   }
 
+  const pad = 1; // خلية هامش
+  const fullW = (layout.width + pad * 2) * CELL;
+  const fullH = (layout.height + pad * 2) * CELL;
+  const scale = Math.min(containerSize.w / fullW, containerSize.h / fullH, 1);
+
+  // مواضع الطرفين الحرّين لعرض التمييز ومناطق الإسقاط
+  const leftEndTile = layout.tiles.find((p) => p.tile.id === chain[0].tile.id);
+  const rightEndTile = layout.tiles.find((p) => p.tile.id === chain[chain.length - 1].tile.id);
+
+  const endZoneStyle = (p: { x: number; y: number; w: number; h: number }, side: EndSide): React.CSSProperties => {
+    const cellX = side === 'left' ? p.x - 1.2 : p.x + p.w + 0.2;
+    return {
+      left: (pad + cellX) * CELL,
+      top: (pad + p.y - 0.25) * CELL,
+      width: CELL * 1.5,
+      height: CELL * 1.5,
+    };
+  };
+
   return (
     <div
       ref={containerRef}
-      className={`relative overflow-hidden cursor-grab active:cursor-grabbing ${className}`}
+      className={`relative overflow-hidden ${className}`}
       style={{
         background: 'rgba(13, 122, 58, 0.1)',
         borderRadius: 16,
         border: '1px solid rgba(201, 168, 76, 0.15)',
       }}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
     >
       <div
-        className="flex items-center justify-center h-full transition-transform duration-300"
+        className="absolute"
         style={{
-          transform: `translateX(${-scrollX}px)`,
-          minWidth: '100%',
+          width: fullW,
+          height: fullH,
+          left: '50%',
+          top: '50%',
+          transform: `translate(-50%, -50%) scale(${scale})`,
+          transformOrigin: 'center center',
         }}
       >
-        <div className="flex items-center gap-0">
-          {boardTiles.map((placed, index) => (
+        {layout.tiles.map((p) => (
+          <div
+            key={p.tile.id}
+            className="absolute"
+            style={{
+              left: (pad + p.x) * CELL + (p.w * CELL) / 2,
+              top: (pad + p.y) * CELL + (p.h * CELL) / 2,
+              width: 0,
+              height: 0,
+            }}
+          >
+            {/* القطعة رأسية التصميم (سمك×طول)، نوسّطها في مساحتها */}
             <div
-              key={placed.tile.id}
-              className="flex-shrink-0"
               style={{
-                marginLeft: index > 0 ? -12 : 0,
-                zIndex: index,
-                animation: `dealTile 0.3s ease-out ${index * 0.05}s both`,
+                position: 'absolute',
+                left: -CELL / 2,
+                top: -CELL,
               }}
             >
               <DominoTile
-                tile={placed.tile}
+                tile={p.tile}
                 size="md"
                 faceUp={true}
-                rotation={placed.rotation}
+                rotation={p.rotation}
               />
             </div>
-          ))}
-        </div>
-      </div>
+          </div>
+        ))}
 
-      {/* Scroll indicators */}
-      {scrollX > 0 && (
-        <div className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/30 flex items-center justify-center">
-          <span className="text-white text-lg">◄</span>
-        </div>
-      )}
-      {containerRef.current && scrollX < containerRef.current.scrollWidth - containerRef.current.clientWidth && (
-        <div className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/30 flex items-center justify-center">
-          <span className="text-white text-lg">►</span>
-        </div>
-      )}
+        {/* تمييز الطرف الأيسر */}
+        {leftEndTile && highlightEnds.includes('left') && (
+          <div
+            ref={(el) => { if (dropSideRefs) dropSideRefs.current.left = el; }}
+            onClick={() => onSelectSide?.('left')}
+            className="absolute rounded-lg cursor-pointer animate-pulse"
+            style={{
+              ...endZoneStyle(leftEndTile, 'left'),
+              border: '2px dashed #2ECC40',
+              background: 'rgba(46, 204, 64, 0.15)',
+            }}
+          />
+        )}
+
+        {/* تمييز الطرف الأيمن */}
+        {rightEndTile && highlightEnds.includes('right') && (
+          <div
+            ref={(el) => { if (dropSideRefs) dropSideRefs.current.right = el; }}
+            onClick={() => onSelectSide?.('right')}
+            className="absolute rounded-lg cursor-pointer animate-pulse"
+            style={{
+              ...endZoneStyle(rightEndTile, 'right'),
+              border: '2px dashed #2ECC40',
+              background: 'rgba(46, 204, 64, 0.15)',
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }
