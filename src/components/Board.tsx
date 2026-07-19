@@ -6,15 +6,12 @@ import { DominoTile } from './DominoTile';
 interface BoardProps {
   chain: ChainTile[];
   className?: string;
-  /** تفعيل تمييز الطرفين القانونيين للقطعة المختارة */
   highlightEnds?: EndSide[];
-  /** النقر على طرف لوضع القطعة المختارة */
   onSelectSide?: (side: EndSide) => void;
-  /** معرّفات مناطق الإسقاط للسحب والإفلات */
   dropSideRefs?: React.MutableRefObject<{ left: HTMLDivElement | null; right: HTMLDivElement | null }>;
 }
 
-const CELL = 30; // بكسل لكل خلية (سمك القطعة)
+const CELL = 30; // الحجم الثابت للخلية
 
 function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSide, dropSideRefs }: BoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -31,7 +28,6 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     return () => ro.disconnect();
   }, []);
 
-  // حساب التخطيط المطور والخالي من التداخلات
   const layout = useMemo(() => layoutChain(chain), [chain]);
 
   if (chain.length === 0) {
@@ -49,47 +45,32 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     );
   }
 
-  // الحجم الفعلي للملعب بالبكسل بناءً على مصفوفة الـ layout الجديدة
   const fullW = layout.width * CELL;
   const fullH = layout.height * CELL;
-  
-  // حساب المقياس لضمان احتواء السلسلة كاملة داخل الشاشة دون الخروج عن الحدود
-  const scale = Math.min(containerSize.w / (fullW + CELL * 2), containerSize.h / (fullH + CELL * 2), 1);
+  const scale = Math.min(containerSize.w / (fullW + CELL), containerSize.h / (fullH + CELL), 1);
 
-  // جلب أول وآخر قطعة في السلسلة لتحديد مناطق الوميض والإسقاط
   const leftEndTile = layout.tiles.find((p) => p.tile.id === chain[0].tile.id);
   const rightEndTile = layout.tiles.find((p) => p.tile.id === chain[chain.length - 1].tile.id);
 
-  /**
-   * حساب موضع منطقة التمييز (Drop Zone) بشكل ديناميكي ذكي.
-   * يعتمد على أبعاد القطعة الطرفية الحالية (أفقية أم عمودية) لمنع تداخل حافة التمييز مع النقاط.
-   */
-  const endZoneStyle = (p: { x: number; y: number; w: number; h: number }, side: EndSide): React.CSSProperties => {
-    const isVertical = p.h > p.w;
-    let zoneX = p.x;
-    let zoneY = p.y;
+  const endZoneStyle = (p: { x: number; y: number; rotation: number }, side: EndSide): React.CSSProperties => {
+    // تحديد اتجاه حافة القطعة المفتوحة بناءً على دورانها الحالي بدقة ليوضع التمييز أمام الرقم المماثل تماماً
+    let offsetX = 0;
+    let offsetY = 0;
+    const rot = p.rotation % 360;
 
-    if (side === 'left') {
-      if (isVertical) {
-        zoneY = p.y - 1.2; // إذا كانت عمودية، التمييز يظهر فوقها أو تحتها
-        zoneX = p.x - 0.25;
-      } else {
-        zoneX = p.x - 1.5; // إذا كانت أفقية، يظهر على يسارها
-        zoneY = p.y - 0.25;
-      }
-    } else {
-      if (isVertical) {
-        zoneY = p.y + p.h + 0.2;
-        zoneX = p.x - 0.25;
-      } else {
-        zoneX = p.x + p.w + 0.2;
-        zoneY = p.y - 0.25;
-      }
+    if (rot === 90) {
+      offsetX = side === 'left' ? -1.5 : 1.5;
+    } else if (rot === 270) {
+      offsetX = side === 'left' ? 1.5 : -1.5;
+    } else if (rot === 0) {
+      offsetY = side === 'left' ? -1.5 : 1.5;
+    } else if (rot === 180) {
+      offsetY = side === 'left' ? 1.5 : -1.5;
     }
 
     return {
-      left: zoneX * CELL,
-      top: zoneY * CELL,
+      left: (p.x + offsetX) * CELL - (CELL * 1.5) / 2,
+      top: (p.y + offsetY) * CELL - (CELL * 1.5) / 2,
       width: CELL * 1.5,
       height: CELL * 1.5,
     };
@@ -106,7 +87,7 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
       }}
     >
       <div
-        className="absolute transition-transform duration-300 ease-out"
+        className="absolute transition-all duration-300"
         style={{
           width: fullW,
           height: fullH,
@@ -116,46 +97,37 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
           transformOrigin: 'center center',
         }}
       >
-        {layout.tiles.map((p) => {
-          // حساب التمركز المطلق داخل المساحة المخصصة للقطعة بدقة
-          const isVertical = p.h > p.w;
-          
-          return (
+        {layout.tiles.map((p) => (
+          /* حاوية مركزية ذات حجم صفر تضمن تدوير القطعة الأصلية حول مركزها الرياضي دون تشويه حجمها */
+          <div
+            key={p.tile.id}
+            className="absolute"
+            style={{
+              left: p.x * CELL,
+              top: p.y * CELL,
+              width: 0,
+              height: 0,
+            }}
+          >
             <div
-              key={p.tile.id}
-              className="absolute flex items-center justify-center"
               style={{
-                left: p.x * CELL,
-                top: p.y * CELL,
-                width: p.w * CELL,
-                height: p.h * CELL,
+                position: 'absolute',
+                // الإزاحة المركزية الثابتة لنصف الحجم الأصلي للقطعة الرأسية الافتراضية
+                left: -CELL / 2,
+                top: -CELL,
               }}
             >
-              <div
-                style={{
-                  transform: `rotate(${p.rotation}deg)`,
-                  transformOrigin: 'center center',
-                  // موازنة الأبعاد الداخلية بناءً على الدوران الحقيقي للقطعة
-                  width: isVertical ? CELL : CELL * 2,
-                  height: isVertical ? CELL * 2 : CELL,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                {/* استدعاء قطعة الدومينو وتمرير زاوية 0 لأن الدوران تمت معالجته بالـ Wrapper الخارجي بدقة */}
-                <DominoTile
-                  tile={p.tile}
-                  size="md"
-                  faceUp={true}
-                  rotation={0}
-                />
-              </div>
+              <DominoTile
+                tile={p.tile}
+                size="md"
+                faceUp={true}
+                rotation={p.rotation} // إعطاء الدوران للمكون الأصلي مباشرة ليقوم بعمله دون أي تدخل خارجي مشوه
+              />
             </div>
-          );
-        })}
+          </div>
+        ))}
 
-        {/* تمييز الطرف الأيسر (أول السلسلة) */}
+        {/* تمييز الطرف الأيسر القانوني */}
         {leftEndTile && highlightEnds.includes('left') && (
           <div
             ref={(el) => { if (dropSideRefs) dropSideRefs.current.left = el; }}
@@ -165,12 +137,12 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
               ...endZoneStyle(leftEndTile, 'left'),
               border: '2px dashed #2ECC40',
               background: 'rgba(46, 204, 64, 0.25)',
-              boxShadow: '0 0 10px rgba(46, 204, 64, 0.5)',
+              boxShadow: '0 0 10px rgba(46, 204, 64, 0.4)',
             }}
           />
         )}
 
-        {/* تمييز الطرف الأيمن (آخر السلسلة) */}
+        {/* تمييز الطرف الأيمن القانوني */}
         {rightEndTile && highlightEnds.includes('right') && (
           <div
             ref={(el) => { if (dropSideRefs) dropSideRefs.current.right = el; }}
@@ -180,7 +152,7 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
               ...endZoneStyle(rightEndTile, 'right'),
               border: '2px dashed #2ECC40',
               background: 'rgba(46, 204, 64, 0.25)',
-              boxShadow: '0 0 10px rgba(46, 204, 64, 0.5)',
+              boxShadow: '0 0 10px rgba(46, 204, 64, 0.4)',
             }}
           />
         )}
