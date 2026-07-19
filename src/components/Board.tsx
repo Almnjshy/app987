@@ -31,6 +31,7 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     return () => ro.disconnect();
   }, []);
 
+  // حساب التخطيط المطور والخالي من التداخلات
   const layout = useMemo(() => layoutChain(chain), [chain]);
 
   if (chain.length === 0) {
@@ -48,20 +49,47 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     );
   }
 
-  const pad = 1; // خلية هامش
-  const fullW = (layout.width + pad * 2) * CELL;
-  const fullH = (layout.height + pad * 2) * CELL;
-  const scale = Math.min(containerSize.w / fullW, containerSize.h / fullH, 1);
+  // الحجم الفعلي للملعب بالبكسل بناءً على مصفوفة الـ layout الجديدة
+  const fullW = layout.width * CELL;
+  const fullH = layout.height * CELL;
+  
+  // حساب المقياس لضمان احتواء السلسلة كاملة داخل الشاشة دون الخروج عن الحدود
+  const scale = Math.min(containerSize.w / (fullW + CELL * 2), containerSize.h / (fullH + CELL * 2), 1);
 
-  // مواضع الطرفين الحرّين لعرض التمييز ومناطق الإسقاط
+  // جلب أول وآخر قطعة في السلسلة لتحديد مناطق الوميض والإسقاط
   const leftEndTile = layout.tiles.find((p) => p.tile.id === chain[0].tile.id);
   const rightEndTile = layout.tiles.find((p) => p.tile.id === chain[chain.length - 1].tile.id);
 
+  /**
+   * حساب موضع منطقة التمييز (Drop Zone) بشكل ديناميكي ذكي.
+   * يعتمد على أبعاد القطعة الطرفية الحالية (أفقية أم عمودية) لمنع تداخل حافة التمييز مع النقاط.
+   */
   const endZoneStyle = (p: { x: number; y: number; w: number; h: number }, side: EndSide): React.CSSProperties => {
-    const cellX = side === 'left' ? p.x - 1.2 : p.x + p.w + 0.2;
+    const isVertical = p.h > p.w;
+    let zoneX = p.x;
+    let zoneY = p.y;
+
+    if (side === 'left') {
+      if (isVertical) {
+        zoneY = p.y - 1.2; // إذا كانت عمودية، التمييز يظهر فوقها أو تحتها
+        zoneX = p.x - 0.25;
+      } else {
+        zoneX = p.x - 1.5; // إذا كانت أفقية، يظهر على يسارها
+        zoneY = p.y - 0.25;
+      }
+    } else {
+      if (isVertical) {
+        zoneY = p.y + p.h + 0.2;
+        zoneX = p.x - 0.25;
+      } else {
+        zoneX = p.x + p.w + 0.2;
+        zoneY = p.y - 0.25;
+      }
+    }
+
     return {
-      left: (pad + cellX) * CELL,
-      top: (pad + p.y - 0.25) * CELL,
+      left: zoneX * CELL,
+      top: zoneY * CELL,
       width: CELL * 1.5,
       height: CELL * 1.5,
     };
@@ -78,7 +106,7 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
       }}
     >
       <div
-        className="absolute"
+        className="absolute transition-transform duration-300 ease-out"
         style={{
           width: fullW,
           height: fullH,
@@ -88,59 +116,71 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
           transformOrigin: 'center center',
         }}
       >
-        {layout.tiles.map((p) => (
-          <div
-            key={p.tile.id}
-            className="absolute"
-            style={{
-              left: (pad + p.x) * CELL + (p.w * CELL) / 2,
-              top: (pad + p.y) * CELL + (p.h * CELL) / 2,
-              width: 0,
-              height: 0,
-            }}
-          >
-            {/* القطعة رأسية التصميم (سمك×طول)، نوسّطها في مساحتها */}
+        {layout.tiles.map((p) => {
+          // حساب التمركز المطلق داخل المساحة المخصصة للقطعة بدقة
+          const isVertical = p.h > p.w;
+          
+          return (
             <div
+              key={p.tile.id}
+              className="absolute flex items-center justify-center"
               style={{
-                position: 'absolute',
-                left: -CELL / 2,
-                top: -CELL,
+                left: p.x * CELL,
+                top: p.y * CELL,
+                width: p.w * CELL,
+                height: p.h * CELL,
               }}
             >
-              <DominoTile
-                tile={p.tile}
-                size="md"
-                faceUp={true}
-                rotation={p.rotation}
-              />
+              <div
+                style={{
+                  transform: `rotate(${p.rotation}deg)`,
+                  transformOrigin: 'center center',
+                  // موازنة الأبعاد الداخلية بناءً على الدوران الحقيقي للقطعة
+                  width: isVertical ? CELL : CELL * 2,
+                  height: isVertical ? CELL * 2 : CELL,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {/* استدعاء قطعة الدومينو وتمرير زاوية 0 لأن الدوران تمت معالجته بالـ Wrapper الخارجي بدقة */}
+                <DominoTile
+                  tile={p.tile}
+                  size="md"
+                  faceUp={true}
+                  rotation={0}
+                />
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
-        {/* تمييز الطرف الأيسر */}
+        {/* تمييز الطرف الأيسر (أول السلسلة) */}
         {leftEndTile && highlightEnds.includes('left') && (
           <div
             ref={(el) => { if (dropSideRefs) dropSideRefs.current.left = el; }}
             onClick={() => onSelectSide?.('left')}
-            className="absolute rounded-lg cursor-pointer animate-pulse"
+            className="absolute rounded-lg cursor-pointer animate-pulse z-10"
             style={{
               ...endZoneStyle(leftEndTile, 'left'),
               border: '2px dashed #2ECC40',
-              background: 'rgba(46, 204, 64, 0.15)',
+              background: 'rgba(46, 204, 64, 0.25)',
+              boxShadow: '0 0 10px rgba(46, 204, 64, 0.5)',
             }}
           />
         )}
 
-        {/* تمييز الطرف الأيمن */}
+        {/* تمييز الطرف الأيمن (آخر السلسلة) */}
         {rightEndTile && highlightEnds.includes('right') && (
           <div
             ref={(el) => { if (dropSideRefs) dropSideRefs.current.right = el; }}
             onClick={() => onSelectSide?.('right')}
-            className="absolute rounded-lg cursor-pointer animate-pulse"
+            className="absolute rounded-lg cursor-pointer animate-pulse z-10"
             style={{
               ...endZoneStyle(rightEndTile, 'right'),
               border: '2px dashed #2ECC40',
-              background: 'rgba(46, 204, 64, 0.15)',
+              background: 'rgba(46, 204, 64, 0.25)',
+              boxShadow: '0 0 10px rgba(46, 204, 64, 0.5)',
             }}
           />
         )}
