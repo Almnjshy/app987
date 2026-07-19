@@ -1,18 +1,21 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useGameStore } from '@/store/gameStore';
+import type { SavedGame } from '@/store/gameStore';
 import {
-  generateAllTiles,
-  dealTiles,
-  determineFirstPlayer,
-  getPlayableTiles,
-  canPlayTile,
-  placeTileOnBoard,
+  createRound,
+  applyMove,
+  applyDraw,
+  applyPass,
+  legalMoves,
   getValidSides,
-  aiSelectTile,
-  calculateRoundWinner,
+  canPlayTile,
+  canDraw,
+  canPass,
+  roundStatus,
+  chooseAIAction,
 } from '@/lib/gameEngine';
 import { LEVELS, DIFFICULTY_SETTINGS, AI_NAMES } from '@/types/game';
-import type { Tile, Player } from '@/types/game';
+import type { Tile, Player, MatchState, EndSide, AILevel } from '@/types/game';
 import { DominoTile } from '@/components/DominoTile';
 import { PlayerAvatar } from '@/components/PlayerAvatar';
 import { Board } from '@/components/Board';
@@ -21,7 +24,6 @@ import {
   BarChart2,
   MessageCircle,
   Smile,
-  Trophy,
   Undo2,
   LogOut,
   Pause,
@@ -30,391 +32,455 @@ import {
   Lightbulb,
 } from 'lucide-react';
 
+const asset = (p: string) => `${import.meta.env.BASE_URL}${p}`;
+const SAVE_KEY = 'domino_save';
+const TURN_SECONDS = 30;
+
+const TOURNAMENT_STAGES: { nameAr: string; target: number; ai: AILevel }[] = [
+  { nameAr: 'ربع النهائي', target: 60, ai: 'easy' },
+  { nameAr: 'نصف النهائي', target: 100, ai: 'medium' },
+  { nameAr: 'النهائي', target: 150, ai: 'hard' },
+];
+
 export default function GameScreen() {
   const {
     currentLevel,
+    gameMode,
+    tournamentStage,
     players,
     setPlayers,
-    boardTiles,
-    setBoardTiles,
-    boneyard,
-    setBoneyard,
-    currentPlayerIndex,
-    setCurrentPlayerIndex,
+    match,
+    setMatch,
     matchScores,
     setMatchScores,
-    setTurnTimer,
-    isTimerRunning,
-    setIsTimerRunning,
     setRoundWinner,
     matchWinner,
     setMatchWinner,
     isPaused,
     setIsPaused,
-    canUndo,
-    setCanUndo,
-    lastMove,
-    setLastMove,
     gameMessage,
     setGameMessage,
     powerUps,
     usePowerUp,
     setScreen,
     completeLevel,
+    addLoss,
+    setHasSavedGame,
   } = useGameStore();
 
   const [selectedTile, setSelectedTile] = useState<Tile | null>(null);
   const [hintTile, setHintTile] = useState<string | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [showChat, setShowChat] = useState(false);
-  const [scorePopup, setScorePopup] = useState<{ text: string; x: number; y: number } | null>(null);
-  const [localTimer, setLocalTimer] = useState(30);
+  const [scorePopup, setScorePopup] = useState<string | null>(null);
+  const [localTimer, setLocalTimer] = useState(TURN_SECONDS);
   const [gameReady, setGameReady] = useState(false);
+  const [drag, setDrag] = useState<{ tile: Tile; x: number; y: number } | null>(null);
+
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const aiTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const gameInitialized = useRef(false);
+  const undoSnapshot = useRef<{ match: MatchState; scores: number[] } | null>(null);
+  const dropSideRefs = useRef<{ left: HTMLDivElement | null; right: HTMLDivElement | null }>({ left: null, right: null });
+  const dragInfo = useRef<{ tile: Tile; moved: boolean } | null>(null);
 
   const levelConfig = LEVELS[currentLevel - 1] || LEVELS[0];
-  const difficulty = levelConfig.aiDifficulty;
-  const targetScore = levelConfig.targetScore;
+  const isTournament = gameMode === 'tournament';
+  const targetScore = isTournament ? TOURNAMENT_STAGES[tournamentStage - 1].target : levelConfig.targetScore;
+  const aiLevel: AILevel = isTournament
+    ? TOURNAMENT_STAGES[tournamentStage - 1].ai
+    : DIFFICULTY_SETTINGS[levelConfig.aiDifficulty].aiLevel;
+  const thinkMin = isTournament ? 1000 : DIFFICULTY_SETTINGS[levelConfig.aiDifficulty].thinkTimeMin;
+  const thinkMax = isTournament ? 2000 : DIFFICULTY_SETTINGS[levelConfig.aiDifficulty].thinkTimeMax;
 
-  // Initialize game
+  /* ------------------------- تهيئة المباراة ------------------------- */
   useEffect(() => {
-    if (gameInitialized.current) return;
-    gameInitialized.current = true;
+    // استكمال مباراة محفوظة
+    let saved: SavedGame | null = null;
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (raw) saved = JSON.parse(raw);
+    } catch { saved = null; }
 
-    const allTiles = generateAllTiles();
-    const tilesPerPlayer = (levelConfig.aiCount + 1) <= 2 ? 7 : 5;
-    const { hands, boneyard: newBoneyard } = dealTiles(allTiles, levelConfig.aiCount + 1, tilesPerPlayer);
+    const wantResume = sessionStorage.getItem('domino_resume') === '1';
+    sessionStorage.removeItem('domino_resume');
+
+    if (saved && wantResume) {
+      const restoredPlayers: Player[] = saved.playerNames.map((name, i) => ({
+        id: i === 0 ? 'human' : `ai-${i}`,
+        name,
+        avatar: saved.playerAvatars[i],
+        isHuman: i === 0,
+        tiles: saved.match.hands[i],
+        score: saved.matchScores[i] || 0,
+        isActive: saved.match.currentPlayer === i,
+        tileCount: saved.match.hands[i].length,
+      }));
+      setPlayers(restoredPlayers);
+      setMatch(saved.match);
+      setMatchScores(saved.matchScores);
+      setGameMessage('تم استكمال المباراة المحفوظة');
+      setGameReady(true);
+      return;
+    }
+
+    // مباراة جديدة
+    const aiCount = isTournament ? tournamentStage : levelConfig.aiCount;
+    const playerCount = aiCount + 1;
+    const variant = playerCount >= 4 ? 'block' : 'draw';
+    const newMatch = createRound(playerCount, variant);
 
     const newPlayers: Player[] = [
       {
         id: 'human',
         name: 'أنت',
-        avatar: '/assets/avatar_player.png',
+        avatar: asset('assets/avatar_player.png'),
         isHuman: true,
-        tiles: hands[0],
+        tiles: newMatch.hands[0],
         score: 0,
-        isActive: false,
-        tileCount: hands[0].length,
+        isActive: newMatch.currentPlayer === 0,
+        tileCount: newMatch.hands[0].length,
       },
-      ...hands.slice(1).map((hand, i) => ({
-        id: `ai-${i}`,
+      ...Array.from({ length: aiCount }, (_, i) => ({
+        id: `ai-${i + 1}`,
         name: AI_NAMES[i % AI_NAMES.length],
-        avatar: '/assets/avatar_ai.png',
+        avatar: asset('assets/avatar_ai.png'),
         isHuman: false,
-        tiles: hand,
+        tiles: newMatch.hands[i + 1],
         score: 0,
-        isActive: false,
-        tileCount: hand.length,
+        isActive: newMatch.currentPlayer === i + 1,
+        tileCount: newMatch.hands[i + 1].length,
       })),
     ];
 
     setPlayers(newPlayers);
-    setBoneyard(newBoneyard);
-    setBoardTiles([]);
-    setMatchScores(new Array(newPlayers.length).fill(0));
-    setCurrentPlayerIndex(0);
-    setTurnTimer(30);
-    setIsTimerRunning(true);
+    setMatch(newMatch);
+    setMatchScores(new Array(playerCount).fill(0));
     setRoundWinner(null);
     setMatchWinner(null);
-    setCanUndo(false);
-    setLastMove(null);
-    setGameMessage('');
+    setGameMessage(isTournament ? `البطولة — ${TOURNAMENT_STAGES[tournamentStage - 1].nameAr}` : '');
     setSelectedTile(null);
+    undoSnapshot.current = null;
     setGameReady(true);
-
-    const firstPlayer = determineFirstPlayer(newPlayers);
-    setCurrentPlayerIndex(firstPlayer);
-    setPlayers(newPlayers.map((p: Player, i: number) => ({ ...p, isActive: i === firstPlayer })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Timer
+  /* ------------------------- مزامنة العرض مع المحرك ------------------------- */
   useEffect(() => {
-    if (!isTimerRunning || isPaused || matchWinner || !gameReady) return;
+    if (!match || players.length === 0) return;
+    setPlayers(players.map((p, i) => ({
+      ...p,
+      tiles: match.hands[i],
+      tileCount: match.hands[i].length,
+      isActive: match.currentPlayer === i,
+      score: matchScores[i] || 0,
+    })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [match, matchScores]);
 
-    setLocalTimer(30);
-    timerRef.current = setInterval(() => {
-      setLocalTimer((prev: number) => {
-        if (prev <= 1) {
-          handleTurnTimeout();
-          return 30;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+  /* ------------------------- الحفظ التلقائي ------------------------- */
+  useEffect(() => {
+    if (!match || !gameReady || matchWinner) return;
+    const saved: SavedGame = {
+      match,
+      matchScores,
+      playerNames: players.map((p) => p.name),
+      playerAvatars: players.map((p) => p.avatar),
+      level: currentLevel,
+      mode: gameMode,
+      targetScore,
     };
-  }, [isTimerRunning, isPaused, matchWinner, currentPlayerIndex, gameReady]);
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(saved));
+      setHasSavedGame(true);
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [match, gameReady]);
 
-  // AI Turn
+  const clearSave = useCallback(() => {
+    try { localStorage.removeItem(SAVE_KEY); } catch { /* ignore */ }
+    setHasSavedGame(false);
+  }, [setHasSavedGame]);
+
+  /* ------------------------- إنهاء الجولة / المباراة ------------------------- */
+  const finishRoundIfNeeded = useCallback((newMatch: MatchState, scores: number[]) => {
+    const status = roundStatus(newMatch);
+    if (status.type === 'ongoing') return false;
+
+    const names = useGameStore.getState().players.map((p) => p.name);
+    const newScores = [...scores];
+    newScores[status.winnerIndex] += status.points;
+    setMatchScores(newScores);
+    setRoundWinner(names[status.winnerIndex]);
+    setScorePopup(`+${status.points}`);
+    setGameMessage(
+      status.reason === 'blocked'
+        ? `انسداد اللعب! الفائز: ${names[status.winnerIndex]}`
+        : `${names[status.winnerIndex]} أنهى قطعه!`
+    );
+    setTimeout(() => setScorePopup(null), 2000);
+
+    const winnerIdx = newScores.indexOf(Math.max(...newScores));
+    if (newScores[winnerIdx] >= targetScore) {
+      const storePlayers = useGameStore.getState().players;
+      setMatchWinner(storePlayers[winnerIdx]?.id ?? null);
+      clearSave();
+      if (storePlayers[winnerIdx]?.isHuman) {
+        const margin = newScores[winnerIdx] - Math.max(...newScores.filter((_, i) => i !== winnerIdx));
+        const stars = margin >= 40 ? 3 : margin >= 20 ? 2 : 1;
+        completeLevel(currentLevel, stars, newScores[winnerIdx]);
+      } else {
+        addLoss();
+      }
+      setTimeout(() => setScreen('matchEnd'), 2200);
+      return true;
+    }
+
+    // جولة جديدة
+    setTimeout(() => {
+      const fresh = createRound(newMatch.playerCount, newMatch.variant);
+      setMatch(fresh);
+      setGameMessage('');
+    }, 2200);
+    return true;
+  }, [targetScore, currentLevel, clearSave, completeLevel, addLoss, setMatch, setMatchScores, setRoundWinner, setMatchWinner, setScreen]);
+
+  /* ------------------------- تنفيذ إجراء (موحّد) ------------------------- */
+  const performAction = useCallback((playerIndex: number, action: 'draw' | 'pass' | { tileId: string; side: EndSide }) => {
+    const state = useGameStore.getState();
+    const m = state.match;
+    if (!m || state.matchWinner) return;
+
+    try {
+      let newMatch: MatchState;
+      if (action === 'draw') {
+        const res = applyDraw(m, playerIndex);
+        newMatch = res.state;
+        const name = state.players[playerIndex]?.name;
+        setGameMessage(res.drawn.length > 1 ? `${name} سحب ${res.drawn.length} قطع` : `${name} سحب قطعة`);
+      } else if (action === 'pass') {
+        newMatch = applyPass(m, playerIndex);
+        setGameMessage(`${state.players[playerIndex]?.name} مرر`);
+      } else {
+        newMatch = applyMove(m, playerIndex, action);
+      }
+      setMatch(newMatch);
+      setLocalTimer(TURN_SECONDS);
+      finishRoundIfNeeded(newMatch, state.matchScores);
+    } catch {
+      // حركة غير قانونية — يمنعها المحرك
+      setGameMessage('حركة غير قانونية!');
+      setTimeout(() => setGameMessage(''), 1500);
+    }
+  }, [setMatch, setGameMessage, finishRoundIfNeeded]);
+
+  /* ------------------------- دور الذكاء الاصطناعي ------------------------- */
   useEffect(() => {
-    if (matchWinner || !gameReady) return;
+    if (!match || !gameReady || matchWinner || isPaused) return;
+    const current = players[match.currentPlayer];
+    if (!current || current.isHuman) return;
 
-    const currentPlayer = players[currentPlayerIndex];
-    if (!currentPlayer || currentPlayer.isHuman) return;
-
-    const diffSettings = DIFFICULTY_SETTINGS[difficulty];
-    const thinkTime = diffSettings.thinkTimeMin + Math.random() * (diffSettings.thinkTimeMax - diffSettings.thinkTimeMin);
-
+    const thinkTime = thinkMin + Math.random() * (thinkMax - thinkMin);
     aiTimeoutRef.current = setTimeout(() => {
-      handleAIPlay();
+      const state = useGameStore.getState();
+      const m = state.match;
+      if (!m || state.matchWinner || state.isPaused) return;
+      const idx = m.currentPlayer;
+      const action = chooseAIAction(m, idx, aiLevel);
+      if (action.kind === 'draw') {
+        performAction(idx, 'draw');
+      } else if (action.kind === 'pass') {
+        performAction(idx, 'pass');
+      } else {
+        performAction(idx, action.move);
+      }
     }, thinkTime);
 
     return () => {
       if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
     };
-  }, [currentPlayerIndex, players, boardTiles, matchWinner, gameReady]);
+  }, [match, gameReady, matchWinner, isPaused, players, aiLevel, thinkMin, thinkMax, performAction]);
 
-  const handleTurnTimeout = useCallback(() => {
-    const currentPlayer = players[currentPlayerIndex];
-    if (!currentPlayer) return;
-
-    if (boneyard.length > 0) {
-      const drawn = boneyard[0];
-      const newBoneyard = boneyard.slice(1);
-      const newTiles = [...currentPlayer.tiles, drawn];
-
-      setBoneyard(newBoneyard);
-      setPlayers(players.map((p: Player, i: number) =>
-        i === currentPlayerIndex ? { ...p, tiles: newTiles, tileCount: newTiles.length } : p
-      ));
-
-      if (canPlayTile(drawn, boardTiles)) {
-        setGameMessage('سحبت قطعة - يمكنك اللعب!');
-        setTurnTimer(30);
-      } else {
-        const nextIndex = (currentPlayerIndex + 1) % players.length;
-        setCurrentPlayerIndex(nextIndex);
-        setPlayers(players.map((p: Player, i: number) => ({ ...p, isActive: i === nextIndex })));
-        setTurnTimer(30);
-      }
-    } else {
-      const nextIndex = (currentPlayerIndex + 1) % players.length;
-      setCurrentPlayerIndex(nextIndex);
-      setPlayers(players.map((p: Player, i: number) => ({ ...p, isActive: i === nextIndex })));
-      setTurnTimer(30);
-    }
-  }, [players, currentPlayerIndex, boneyard, boardTiles]);
-
-  const handleAIPlay = useCallback(() => {
-    const currentPlayer = players[currentPlayerIndex];
-    if (!currentPlayer || currentPlayer.isHuman) return;
-
-    const playable = getPlayableTiles(currentPlayer.tiles, boardTiles);
-
-    if (playable.length > 0) {
-      const move = aiSelectTile(currentPlayer.tiles, boardTiles, difficulty, new Set());
-      if (move) {
-        const newBoard = placeTileOnBoard(move.tile, boardTiles, move.side);
-        const newTiles = currentPlayer.tiles.filter((t: Tile) => t.id !== move.tile.id);
-
-        setBoardTiles(newBoard);
-        setPlayers(players.map((p: Player, i: number) =>
-          i === currentPlayerIndex ? { ...p, tiles: newTiles, tileCount: newTiles.length } : p
-        ));
-        setLastMove({ tile: move.tile, fromBoneyard: false });
-        setCanUndo(false);
-
-        checkRoundEnd(newTiles, currentPlayerIndex);
-      }
-    } else {
-      if (boneyard.length > 0) {
-        const drawn = boneyard[0];
-        const newBoneyard = boneyard.slice(1);
-        const newTiles = [...currentPlayer.tiles, drawn];
-
-        setBoneyard(newBoneyard);
-        setPlayers(players.map((p: Player, i: number) =>
-          i === currentPlayerIndex ? { ...p, tiles: newTiles, tileCount: newTiles.length } : p
-        ));
-
-        if (canPlayTile(drawn, boardTiles)) {
-          setTimeout(() => handleAIPlay(), 1500);
-          return;
-        } else {
-          setGameMessage(`${currentPlayer.name} سحب ومرر`);
+  /* ------------------------- المؤقت ------------------------- */
+  useEffect(() => {
+    if (!gameReady || matchWinner || isPaused || !match) return;
+    timerRef.current = setInterval(() => {
+      setLocalTimer((prev) => {
+        if (prev <= 1) {
+          // انتهى الوقت: إجراء تلقائي قانوني
+          const state = useGameStore.getState();
+          const m = state.match;
+          if (m && !state.matchWinner) {
+            const idx = m.currentPlayer;
+            const moves = legalMoves(m.hands[idx], m.chain);
+            if (moves.length > 0) {
+              performAction(idx, moves[0]);
+            } else if (canDraw(m, idx)) {
+              performAction(idx, 'draw');
+            } else if (canPass(m, idx)) {
+              performAction(idx, 'pass');
+            }
+          }
+          return TURN_SECONDS;
         }
-      } else {
-        setGameMessage(`${currentPlayer.name} مرر`);
-      }
-      const nextIndex = (currentPlayerIndex + 1) % players.length;
-      setCurrentPlayerIndex(nextIndex);
-      setPlayers(players.map((p: Player, i: number) => ({ ...p, isActive: i === nextIndex })));
-      setTurnTimer(30);
-    }
-  }, [players, currentPlayerIndex, boardTiles, boneyard, difficulty]);
+        return prev - 1;
+      });
+    }, 1000);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [gameReady, matchWinner, isPaused, match?.currentPlayer, match, performAction]);
 
-  const checkRoundEnd = useCallback((playerTiles: Tile[], _playerIndex?: number) => {
-    if (playerTiles.length === 0) {
-      const { winnerIndex, points } = calculateRoundWinner(players);
-      const bonus = 10;
-      const totalPoints = points + bonus;
+  /* ------------------------- تفاعلات اللاعب ------------------------- */
+  const humanIndex = 0;
+  const isHumanTurn = match?.currentPlayer === humanIndex && !matchWinner;
 
-      const newScores = [...matchScores];
-      newScores[winnerIndex] += totalPoints;
-      setMatchScores(newScores);
-
-      setRoundWinner(players[winnerIndex].name);
-      setScorePopup({ text: `+${totalPoints}`, x: 50, y: 50 });
-      setTimeout(() => setScorePopup(null), 2000);
-
-      if (newScores[winnerIndex] >= targetScore) {
-        setMatchWinner(players[winnerIndex].id);
-        setIsTimerRunning(false);
-        if (players[winnerIndex].isHuman) {
-          const margin = newScores[winnerIndex] - Math.max(...newScores.filter((_: number, i: number) => i !== winnerIndex));
-          const stars = margin >= 40 ? 3 : margin >= 20 ? 2 : 1;
-          completeLevel(currentLevel, stars, newScores[winnerIndex]);
-        }
-        setTimeout(() => setScreen('matchEnd'), 2000);
-        return;
-      }
-
-      setTimeout(() => startNewRound(), 2000);
-    } else {
-      const nextIndex = (currentPlayerIndex + 1) % players.length;
-      setCurrentPlayerIndex(nextIndex);
-      setPlayers(players.map((p: Player, i: number) => ({ ...p, isActive: i === nextIndex })));
-      setTurnTimer(30);
-    }
-  }, [players, matchScores, targetScore, currentLevel]);
-
-  const startNewRound = useCallback(() => {
-    const allTiles = generateAllTiles();
-    const tilesPerPlayer = players.length <= 2 ? 7 : 5;
-    const { hands, boneyard: newBoneyard } = dealTiles(allTiles, players.length, tilesPerPlayer);
-
-    const newPlayers = players.map((p: Player, i: number) => ({
-      ...p,
-      tiles: hands[i],
-      tileCount: hands[i].length,
-      isActive: false,
-    }));
-
-    setPlayers(newPlayers);
-    setBoneyard(newBoneyard);
-    setBoardTiles([]);
-    setRoundWinner(null);
-    setCanUndo(false);
-    setLastMove(null);
-    setGameMessage('');
+  const playHumanTile = useCallback((tile: Tile, side: EndSide) => {
+    if (!isHumanTurn || !match) return;
+    undoSnapshot.current = { match, scores: [...matchScores] };
     setSelectedTile(null);
-
-    const firstPlayer = determineFirstPlayer(newPlayers);
-    setCurrentPlayerIndex(firstPlayer);
-    setPlayers(newPlayers.map((p: Player, i: number) => ({ ...p, isActive: i === firstPlayer })));
-    setTurnTimer(30);
-    setIsTimerRunning(true);
-  }, [players]);
+    setHintTile(null);
+    performAction(humanIndex, { tileId: tile.id, side });
+  }, [isHumanTurn, match, matchScores, performAction]);
 
   const handleTileClick = (tile: Tile) => {
-    const currentPlayer = players[currentPlayerIndex];
-    if (!currentPlayer?.isHuman || matchWinner) return;
+    if (!isHumanTurn || !match) return;
+    if (dragInfo.current?.moved) return; // كان سحباً وليس نقرة
 
-    if (!canPlayTile(tile, boardTiles)) {
+    if (!canPlayTile(tile, match.chain)) {
       setGameMessage('لا يمكن لعب هذه القطعة!');
       setTimeout(() => setGameMessage(''), 1500);
       return;
     }
 
     if (selectedTile?.id === tile.id) {
-      const sides = getValidSides(tile, boardTiles);
-      const side = sides[0] || 'right';
-      const newBoard = placeTileOnBoard(tile, boardTiles, side);
-      const newTiles = currentPlayer.tiles.filter((t: Tile) => t.id !== tile.id);
-
-      setBoardTiles(newBoard);
-      setPlayers(players.map((p: Player, i: number) =>
-        i === currentPlayerIndex ? { ...p, tiles: newTiles, tileCount: newTiles.length } : p
-      ));
-      setLastMove({ tile, fromBoneyard: false });
-      setCanUndo(true);
-      setSelectedTile(null);
-      setHintTile(null);
-
-      checkRoundEnd(newTiles, currentPlayerIndex);
+      const sides = getValidSides(tile, match.chain);
+      playHumanTile(tile, sides[0]);
     } else {
       setSelectedTile(tile);
     }
   };
 
-  const handleDrawFromBoneyard = () => {
-    const currentPlayer = players[currentPlayerIndex];
-    if (!currentPlayer?.isHuman || matchWinner || boneyard.length === 0) return;
-
-    const drawn = boneyard[0];
-    const newBoneyard = boneyard.slice(1);
-    const newTiles = [...currentPlayer.tiles, drawn];
-
-    setBoneyard(newBoneyard);
-    setPlayers(players.map((p: Player, i: number) =>
-      i === currentPlayerIndex ? { ...p, tiles: newTiles, tileCount: newTiles.length } : p
-    ));
-    setLastMove({ tile: drawn, fromBoneyard: true });
-
-    if (canPlayTile(drawn, boardTiles)) {
-      setGameMessage('يمكنك لعب القطعة المسحوبة!');
-    } else {
-      setTimeout(() => {
-        const nextIndex = (currentPlayerIndex + 1) % players.length;
-        setCurrentPlayerIndex(nextIndex);
-        setPlayers(players.map((p: Player, i: number) => ({ ...p, isActive: i === nextIndex })));
-        setTurnTimer(30);
-      }, 1000);
+  const handleSelectSide = (side: EndSide) => {
+    if (selectedTile && match) {
+      const sides = getValidSides(selectedTile, match.chain);
+      if (sides.includes(side)) playHumanTile(selectedTile, side);
     }
   };
 
-  const handleUndo = () => {
-    if (!canUndo || !lastMove) return;
-    setCanUndo(false);
+  /* ---------- السحب والإفلات (Pointer-based، يعمل لمساً وفأرة) ---------- */
+  const onTilePointerDown = (tile: Tile, e: React.PointerEvent) => {
+    if (!isHumanTurn || !match || !canPlayTile(tile, match.chain)) return;
+    dragInfo.current = { tile, moved: false };
+    const startX = e.clientX;
+    const startY = e.clientY;
+
+    const onMove = (ev: PointerEvent) => {
+      if (!dragInfo.current) return;
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (!dragInfo.current.moved && Math.hypot(dx, dy) > 10) {
+        dragInfo.current.moved = true;
+        setSelectedTile(tile);
+      }
+      if (dragInfo.current.moved) {
+        setDrag({ tile, x: ev.clientX, y: ev.clientY });
+      }
+    };
+
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      const wasDrag = dragInfo.current?.moved;
+      dragInfo.current = wasDrag ? dragInfo.current : null;
+      setDrag(null);
+      if (!wasDrag) {
+        dragInfo.current = null;
+        return;
+      }
+      // تحديد منطقة الإسقاط
+      const sides = getValidSides(tile, match.chain);
+      const hit = (el: HTMLDivElement | null) => {
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        return ev.clientX >= r.left - 20 && ev.clientX <= r.right + 20 &&
+               ev.clientY >= r.top - 20 && ev.clientY <= r.bottom + 20;
+      };
+      let dropped = false;
+      if (hit(dropSideRefs.current.left) && sides.includes('left')) {
+        playHumanTile(tile, 'left');
+        dropped = true;
+      } else if (hit(dropSideRefs.current.right) && sides.includes('right')) {
+        playHumanTile(tile, 'right');
+        dropped = true;
+      }
+      if (!dropped) {
+        // إسقاط غير قانوني → إرجاع تلقائي
+        setSelectedTile(null);
+        setGameMessage('أفلت القطعة على أحد الطرفين المضيئين');
+        setTimeout(() => setGameMessage(''), 1500);
+      }
+      dragInfo.current = null;
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
   };
 
+  /* ------------------------- القدرات ------------------------- */
   const handleUsePowerUp = (type: string) => {
     const powerUp = powerUps.find((p) => p.type === type);
-    if (!powerUp || powerUp.uses <= 0) return;
-
-    usePowerUp(type);
+    if (!powerUp || powerUp.uses <= 0 || !match) return;
 
     switch (type) {
       case 'hint': {
-        const currentPlayer = players[currentPlayerIndex];
-        if (currentPlayer?.isHuman) {
-          const playable = getPlayableTiles(currentPlayer.tiles, boardTiles);
-          if (playable.length > 0) {
-            setHintTile(playable[0].id);
-            setTimeout(() => setHintTile(null), 3000);
-          }
+        if (!isHumanTurn) return;
+        usePowerUp(type);
+        const moves = legalMoves(match.hands[humanIndex], match.chain);
+        if (moves.length > 0) {
+          const best = chooseAIAction(match, humanIndex, 'medium');
+          const id = best.kind === 'move' ? best.move.tileId : moves[0].tileId;
+          setHintTile(id);
+          setTimeout(() => setHintTile(null), 3000);
         }
         break;
       }
       case 'extraTime':
-        setLocalTimer((prev: number) => Math.min(prev + 15, 60));
+        usePowerUp(type);
+        setLocalTimer((prev) => Math.min(prev + 15, 60));
         break;
       case 'peek':
-        setGameMessage('نظرة خاطفة على قطع الخصم...');
+        usePowerUp(type);
+        if (match.boneyard.length > 0) {
+          const t = match.boneyard[0];
+          setGameMessage(`القطعة التالية في المخزن: ${t.top} | ${t.bottom}`);
+        } else {
+          const counts = match.hands.slice(1).map((h) => h.length).join('، ');
+          setGameMessage(`قطع الخصوم: ${counts}`);
+        }
         setTimeout(() => setGameMessage(''), 3000);
         break;
+      case 'undo': {
+        if (!undoSnapshot.current) {
+          setGameMessage('لا يوجد ما يمكن التراجع عنه');
+          setTimeout(() => setGameMessage(''), 1500);
+          return;
+        }
+        usePowerUp(type);
+        setMatch(undoSnapshot.current.match);
+        setMatchScores(undoSnapshot.current.scores);
+        undoSnapshot.current = null;
+        setGameMessage('تم التراجع');
+        setTimeout(() => setGameMessage(''), 1500);
+        break;
+      }
     }
   };
 
   const handleQuit = () => {
-    setIsPaused(true);
-    setIsTimerRunning(false);
+    setIsPaused(false);
     setScreen('menu');
   };
 
-  const timerProgress = localTimer / 30;
-  const currentPlayer = players[currentPlayerIndex];
-  const humanPlayer = players.find((p: Player) => p.isHuman);
-  const playableTiles = humanPlayer ? getPlayableTiles(humanPlayer.tiles, boardTiles) : [];
-
-  const emojis = ['😀', '😂', '😎', '😤', '👍', '👎', '🎉', '😱', '🔥', '💀', '🎊', '🤔'];
-
-  if (!gameReady) {
+  if (!gameReady || !match) {
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-[#0D7A3A]">
         <div className="text-center">
@@ -425,22 +491,33 @@ export default function GameScreen() {
     );
   }
 
+  const humanPlayer = players[humanIndex];
+  const aiPlayers = players.slice(1);
+  const timerProgress = localTimer / TURN_SECONDS;
+  const playableIds = isHumanTurn
+    ? new Set(legalMoves(match.hands[humanIndex], match.chain).map((m) => m.tileId))
+    : new Set<string>();
+  const selectedSides = selectedTile && match ? getValidSides(selectedTile, match.chain) : [];
+  const humanCanDraw = canDraw(match, humanIndex);
+  const humanCanPass = canPass(match, humanIndex);
+
+  const emojis = ['😀', '😂', '😎', '😤', '👍', '👎', '🎉', '😱', '🔥', '💀', '🎊', '🤔'];
+
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-[#0D7A3A]">
-      {/* Table background */}
+      {/* خلفية الطاولة */}
       <div
         className="absolute inset-0"
         style={{
-          backgroundImage: 'url(/app/assets/table_bg.jpg)',
+          backgroundImage: `url(${asset('assets/table_bg.jpg')})`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
         }}
       />
       <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/50" />
 
-      {/* Top HUD */}
+      {/* شريط الحالة العلوي */}
       <div className="relative z-10 flex items-center justify-between p-3">
-        {/* Left - Stats */}
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsPaused(true)}
@@ -451,35 +528,25 @@ export default function GameScreen() {
           <div className="glass-panel rounded-lg px-3 py-1.5">
             <div className="flex items-center gap-2">
               <BarChart2 className="w-4 h-4 text-[#C9A84C]" />
-              <span className="text-white text-sm font-bold">
-                {matchScores[0] || 0}
-              </span>
+              <span className="text-white text-sm font-bold">{matchScores[0] || 0}</span>
             </div>
           </div>
         </div>
 
-        {/* Center - Score */}
         <div className="glass-panel rounded-xl px-4 py-2 text-center">
           <p className="text-[#C9A84C] text-xs font-arabic mb-0.5">
-            لعب {targetScore} نقطة
+            {isTournament ? TOURNAMENT_STAGES[tournamentStage - 1].nameAr : `لعب ${targetScore} نقطة`}
           </p>
           <div className="flex items-center gap-3">
-            <span className="text-green-400 font-bold text-lg">
-              {matchScores[0] || 0}
-            </span>
+            <span className="text-green-400 font-bold text-lg">{matchScores[0] || 0}</span>
             <span className="text-white/50">|</span>
-            <span className="text-red-400 font-bold text-lg">
-              {matchScores[1] || 0}
-            </span>
+            <span className="text-red-400 font-bold text-lg">{matchScores[1] || 0}</span>
           </div>
         </div>
 
-        {/* Right - Settings */}
         <div className="flex items-center gap-2">
           <div className="glass-panel rounded-lg px-3 py-1.5">
-            <span className="text-[#B8A080] text-xs font-arabic">
-              قطع {boneyard.length}
-            </span>
+            <span className="text-[#B8A080] text-xs font-arabic">قطع {match.boneyard.length}</span>
           </div>
           <button
             onClick={() => setScreen('settings')}
@@ -490,40 +557,40 @@ export default function GameScreen() {
         </div>
       </div>
 
-      {/* Game area */}
-      <div className="relative z-10 flex-1 flex flex-col px-4">
-        {/* Top player (AI) */}
-        {players.length > 1 && (
-          <div className="flex items-center justify-center gap-4 py-2">
-            <PlayerAvatar
-              player={players[1]}
-              isActive={currentPlayerIndex === 1}
-              timerProgress={timerProgress}
-              position="top"
-              tileCount={players[1]?.tileCount}
-            />
-            {players[2] && (
+      {/* منطقة اللعب */}
+      <div className="relative z-10 flex-1 flex flex-col px-4 min-h-0">
+        {/* لاعبو الذكاء الاصطناعي */}
+        {aiPlayers.length > 0 && (
+          <div className="flex items-center justify-center gap-6 py-1">
+            {aiPlayers.map((p, i) => (
               <PlayerAvatar
-                player={players[2]}
-                isActive={currentPlayerIndex === 2}
+                key={p.id}
+                player={p}
+                isActive={match.currentPlayer === i + 1}
                 timerProgress={timerProgress}
                 position="top"
-                tileCount={players[2]?.tileCount}
+                tileCount={p.tileCount}
               />
-            )}
+            ))}
           </div>
         )}
 
-        {/* Board */}
-        <div className="flex-1 flex items-center justify-center py-2">
-          <Board boardTiles={boardTiles} className="w-full h-full" />
+        {/* الطاولة */}
+        <div className="flex-1 flex items-center justify-center py-1 min-h-0">
+          <Board
+            chain={match.chain}
+            className="w-full h-full"
+            highlightEnds={selectedTile ? selectedSides : []}
+            onSelectSide={handleSelectSide}
+            dropSideRefs={dropSideRefs}
+          />
         </div>
 
-        {/* Bottom player (Human) */}
-        <div className="flex items-center justify-center gap-3 py-2">
+        {/* اللاعب البشري */}
+        <div className="flex items-center justify-center gap-3 py-1">
           <PlayerAvatar
-            player={humanPlayer || players[0]}
-            isActive={currentPlayerIndex === 0}
+            player={humanPlayer}
+            isActive={match.currentPlayer === humanIndex}
             timerProgress={timerProgress}
             position="bottom"
             showTiles
@@ -531,20 +598,18 @@ export default function GameScreen() {
           />
         </div>
 
-        {/* Game message */}
+        {/* رسالة اللعبة */}
         {gameMessage && (
-          <div className="text-center py-1">
-            <span className="text-[#C9A84C] text-sm font-arabic animate-fade-in">
-              {gameMessage}
-            </span>
+          <div className="text-center py-0.5">
+            <span className="text-[#C9A84C] text-sm font-arabic animate-fade-in">{gameMessage}</span>
           </div>
         )}
 
-        {/* Player hand */}
-        <div className="py-2">
+        {/* يد اللاعب */}
+        <div className="py-1">
           <div className="flex items-center justify-center gap-1 overflow-x-auto pb-2 px-2">
             {humanPlayer?.tiles.map((tile: Tile) => {
-              const isPlayable = playableTiles.some((t: Tile) => t.id === tile.id);
+              const isPlayable = playableIds.has(tile.id);
               const isSelected = selectedTile?.id === tile.id;
               const isHint = hintTile === tile.id;
 
@@ -552,44 +617,41 @@ export default function GameScreen() {
                 <div
                   key={tile.id}
                   className={`flex-shrink-0 transition-all duration-200 ${
-                    isSelected ? '-translate-y-3' : isPlayable ? 'hover:-translate-y-2' : ''
+                    isSelected ? '-translate-y-3' : isPlayable ? 'hover:-translate-y-2' : 'opacity-70'
                   } ${isHint ? 'animate-pulse' : ''}`}
+                  style={{ touchAction: isPlayable ? 'none' : 'auto' }}
                   onClick={() => handleTileClick(tile)}
+                  onPointerDown={(e) => onTilePointerDown(tile, e)}
                 >
                   <DominoTile
                     tile={tile}
                     size="sm"
                     faceUp={true}
                     selected={isSelected}
-                    playable={isPlayable}
+                    playable={isPlayable && !!isHumanTurn}
                   />
                 </div>
               );
             })}
           </div>
 
-          {/* Boneyard draw button */}
-          {currentPlayer?.isHuman && playableTiles.length === 0 && boneyard.length > 0 && (
-            <div className="text-center mt-2">
+          {/* زر السحب من المخزن */}
+          {isHumanTurn && humanCanDraw && (
+            <div className="text-center mt-1">
               <button
-                onClick={handleDrawFromBoneyard}
+                onClick={() => performAction(humanIndex, 'draw')}
                 className="px-6 py-2 bg-[#C9A84C] text-[#1A0E08] rounded-lg font-bold text-sm font-arabic hover:scale-105 transition-transform"
               >
-                سحب قطعة ({boneyard.length} متبقية)
+                سحب قطعة ({match.boneyard.length} متبقية)
               </button>
             </div>
           )}
 
-          {/* Pass button */}
-          {currentPlayer?.isHuman && playableTiles.length === 0 && boneyard.length === 0 && (
-            <div className="text-center mt-2">
+          {/* زر التمرير */}
+          {isHumanTurn && humanCanPass && (
+            <div className="text-center mt-1">
               <button
-                onClick={() => {
-                  const nextIndex = (currentPlayerIndex + 1) % players.length;
-                  setCurrentPlayerIndex(nextIndex);
-                  setPlayers(players.map((p: Player, i: number) => ({ ...p, isActive: i === nextIndex })));
-                  setTurnTimer(30);
-                }}
+                onClick={() => performAction(humanIndex, 'pass')}
                 className="px-6 py-2 bg-red-600 text-white rounded-lg font-bold text-sm font-arabic hover:scale-105 transition-transform"
               >
                 تمرير
@@ -598,8 +660,8 @@ export default function GameScreen() {
           )}
         </div>
 
-        {/* Power-ups bar */}
-        <div className="flex items-center justify-center gap-2 py-2">
+        {/* شريط القدرات */}
+        <div className="flex items-center justify-center gap-2 py-1">
           {powerUps.map((pu) => (
             <button
               key={pu.type}
@@ -622,8 +684,8 @@ export default function GameScreen() {
           ))}
         </div>
 
-        {/* Bottom action bar */}
-        <div className="flex items-center justify-center gap-4 py-2">
+        {/* شريط الإجراءات السفلي */}
+        <div className="flex items-center justify-center gap-4 py-1.5">
           <button
             onClick={() => setShowEmojiPicker(!showEmojiPicker)}
             className="w-10 h-10 rounded-full glass-panel flex items-center justify-center hover:scale-110 transition-transform"
@@ -631,7 +693,10 @@ export default function GameScreen() {
             <Smile className="w-5 h-5 text-[#C9A84C]" />
           </button>
           <button
-            onClick={() => setShowChat(!showChat)}
+            onClick={() => {
+              setGameMessage('الدردشة متاحة في وضع الشبكة');
+              setTimeout(() => setGameMessage(''), 2000);
+            }}
             className="w-10 h-10 rounded-full glass-panel flex items-center justify-center hover:scale-110 transition-transform"
           >
             <MessageCircle className="w-5 h-5 text-[#C9A84C]" />
@@ -644,7 +709,7 @@ export default function GameScreen() {
           </button>
         </div>
 
-        {/* Emoji picker */}
+        {/* منتقي الإيموجي */}
         {showEmojiPicker && (
           <div className="absolute bottom-20 left-1/2 -translate-x-1/2 glass-panel rounded-xl p-3 flex flex-wrap gap-2 max-w-[200px] z-20">
             {emojis.map((emoji) => (
@@ -663,38 +728,40 @@ export default function GameScreen() {
           </div>
         )}
 
-        {/* Score popup */}
+        {/* نافذة النقاط المنبثقة */}
         {scorePopup && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-20">
-            <div className="text-4xl font-bold text-[#C9A84C] animate-bounce">
-              {scorePopup.text}
-            </div>
+            <div className="text-4xl font-bold text-[#C9A84C] animate-bounce">{scorePopup}</div>
           </div>
         )}
 
-        {/* Pause overlay */}
+        {/* شبح السحب */}
+        {drag && (
+          <div
+            className="fixed pointer-events-none z-50"
+            style={{ left: drag.x - 15, top: drag.y - 30 }}
+          >
+            <DominoTile tile={drag.tile} size="sm" faceUp={true} selected />
+          </div>
+        )}
+
+        {/* نافذة الإيقاف المؤقت */}
         {isPaused && (
           <div className="absolute inset-0 bg-black/70 z-30 flex items-center justify-center">
             <div className="glass-panel rounded-2xl p-6 max-w-sm w-full mx-4">
               <h2 className="text-2xl font-bold text-[#C9A84C] text-center mb-6 font-arabic">إيقاف مؤقت</h2>
               <div className="space-y-3">
                 <button
-                  onClick={() => {
-                    setIsPaused(false);
-                    setIsTimerRunning(true);
-                  }}
+                  onClick={() => setIsPaused(false)}
                   className="w-full py-3 bg-[#2D8A3E] text-white rounded-lg font-bold font-arabic hover:scale-105 transition-transform"
                 >
                   استئناف
                 </button>
                 <button
-                  onClick={() => {
-                    setIsPaused(false);
-                    setScreen('menu');
-                  }}
+                  onClick={handleQuit}
                   className="w-full py-3 bg-[#3D2817] text-[#B8A080] rounded-lg font-bold font-arabic hover:scale-105 transition-transform"
                 >
-                  الخروج للقائمة
+                  حفظ والخروج للقائمة
                 </button>
               </div>
             </div>
