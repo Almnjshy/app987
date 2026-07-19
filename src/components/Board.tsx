@@ -13,6 +13,17 @@ interface BoardProps {
 
 const CELL = 30; // الحجم الثابت للخلية
 
+/**
+ * مكون Board — يعرض سلسلة الدومينو على الطاولة.
+ *
+ * الإصلاحات:
+ *  1) نستخدم wrapper بحجم صفر لكن نضع القطعة بإزاحة -w/2 و -h/2
+ *     لتدور حول مركزها الحقيقي.
+ *  2) نختار إزاحة المركز ديناميكياً حسب الـ rotation:
+ *     - rotation 0 أو 180 → القطعة أفقية (w أكبر من h)
+ *     - rotation 90 أو 270 → القطعة عمودية (h أكبر من w)
+ *  3) تصحيح endZoneStyle للتعامل مع كل 4 زوايا بشكل متماثل.
+ */
 function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSide, dropSideRefs }: BoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ w: 600, h: 300 });
@@ -52,25 +63,42 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
   const leftEndTile = layout.tiles.find((p) => p.tile.id === chain[0].tile.id);
   const rightEndTile = layout.tiles.find((p) => p.tile.id === chain[chain.length - 1].tile.id);
 
+  /**
+   * تحديد موقع منطقة الإفلات للطرف المفتوح.
+   *
+   * الإصلاح: نستخدم متجه الوحدة (unit vector) لاتجاه القطعة
+   * بدلاً من افتراضات ثابتة لكل زاوية.
+   * - القطعة الأفقية (rot 90/270): الطرف المفتوح في x+
+   * - القطعة العمودية (rot 0/180): الطرف المفتوح في y+
+   */
   const endZoneStyle = (p: { x: number; y: number; rotation: number }, side: EndSide): React.CSSProperties => {
-    // تحديد اتجاه حافة القطعة المفتوحة بناءً على دورانها الحالي بدقة ليوضع التمييز أمام الرقم المماثل تماماً
-    let offsetX = 0;
-    let offsetY = 0;
-    const rot = p.rotation % 360;
+    const rot = ((p.rotation % 360) + 360) % 360;
+    const isHorizontal = rot === 90 || rot === 270;
 
-    if (rot === 90) {
-      offsetX = side === 'left' ? -1.5 : 1.5;
-    } else if (rot === 270) {
-      offsetX = side === 'left' ? 1.5 : -1.5;
-    } else if (rot === 0) {
-      offsetY = side === 'left' ? -1.5 : 1.5;
-    } else if (rot === 180) {
-      offsetY = side === 'left' ? 1.5 : -1.5;
+    // متجه الطرف المفتوح (للقطعة العمودية: للأسفل rot=0، للأعلى rot=180)
+    // (للقطعة الأفقية: لليمين rot=90، لليسار rot=270)
+    let dx = 0;
+    let dy = 0;
+
+    if (isHorizontal) {
+      // القطعة الأفقية: الطرف المفتوح في اتجاه x
+      // rot=90 → القطعة رأسها لليسار، ذيلها لليمين → left side من chain = يسار مرئي
+      // rot=270 → معكوس
+      dx = rot === 90 ? -1 : 1;
+    } else {
+      // القطعة العمودية
+      dy = rot === 0 ? 1 : -1;
+    }
+
+    // نعكس الاتجاه إذا كان side=left (نريد الذهاب لليسار/الأعلى)
+    if (side === 'left') {
+      dx = -dx;
+      dy = -dy;
     }
 
     return {
-      left: (p.x + offsetX) * CELL - (CELL * 1.5) / 2,
-      top: (p.y + offsetY) * CELL - (CELL * 1.5) / 2,
+      left: (p.x + dx * 1.2) * CELL - (CELL * 1.5) / 2,
+      top: (p.y + dy * 1.2) * CELL - (CELL * 1.5) / 2,
       width: CELL * 1.5,
       height: CELL * 1.5,
     };
@@ -97,35 +125,51 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
           transformOrigin: 'center center',
         }}
       >
-        {layout.tiles.map((p) => (
-          /* حاوية مركزية ذات حجم صفر تضمن تدوير القطعة الأصلية حول مركزها الرياضي دون تشويه حجمها */
-          <div
-            key={p.tile.id}
-            className="absolute"
-            style={{
-              left: p.x * CELL,
-              top: p.y * CELL,
-              width: 0,
-              height: 0,
-            }}
-          >
+        {layout.tiles.map((p) => {
+          // *** الإصلاح 1 و 2: حساب الإزاحة الصحيحة حسب الدوران ***
+          // القطعة في DominoTile:
+          //   - md: w=40, h=80 (عمودية افتراضياً)
+          //   - rotation=0/180: تصبح أفقية (تبادل w,h بصرياً)
+          //   - rotation=90/270: تبقى عمودية
+          //
+          // لكي يتمركز الدوران حول المركز، يجب أن نزيح:
+          //   - إذا كانت القطعة ستظهر عمودية (rot 90/270):
+          //       dx = -w/2 = -20, dy = -h/2 = -40
+          //   - إذا كانت ستظهر أفقية (rot 0/180):
+          //       dx = -h/2 = -40, dy = -w/2 = -20
+          const rot = ((p.rotation % 360) + 360) % 360;
+          const willBeVertical = rot === 90 || rot === 270;
+          const offsetX = willBeVertical ? -20 : -40;
+          const offsetY = willBeVertical ? -40 : -20;
+
+          return (
             <div
+              key={p.tile.id}
+              className="absolute"
               style={{
-                position: 'absolute',
-                // الإزاحة المركزية الثابتة لنصف الحجم الأصلي للقطعة الرأسية الافتراضية
-                left: -CELL / 2,
-                top: -CELL,
+                left: p.x * CELL,
+                top: p.y * CELL,
+                width: 0,
+                height: 0,
               }}
             >
-              <DominoTile
-                tile={p.tile}
-                size="md"
-                faceUp={true}
-                rotation={p.rotation} // إعطاء الدوران للمكون الأصلي مباشرة ليقوم بعمله دون أي تدخل خارجي مشوه
-              />
+              <div
+                style={{
+                  position: 'absolute',
+                  left: offsetX,
+                  top: offsetY,
+                }}
+              >
+                <DominoTile
+                  tile={p.tile}
+                  size="md"
+                  faceUp={true}
+                  rotation={p.rotation}
+                />
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {/* تمييز الطرف الأيسر القانوني */}
         {leftEndTile && highlightEnds.includes('left') && (
