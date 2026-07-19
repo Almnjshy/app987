@@ -13,7 +13,7 @@ export function generateAllTiles(): Tile[] {
   for (let i = 0; i <= 6; i++) {
     for (let j = i; j <= 6; j++) {
       tiles.push({
-        id: `tile-${tileIdCounter++}`, // ✅ تم إصلاح الخطأ الصياغي هنا
+        id: `tile-${tileIdCounter++}`,
         top: i,
         bottom: j,
         isDouble: i === j,
@@ -94,7 +94,6 @@ export function createRound(playerCount: number, variant: 'block' | 'draw'): Mat
   const { hands, boneyard } = dealTiles(playerCount);
   const { playerIndex, requiredTileId } = determineFirstPlayer(hands);
 
-  // مصفوفة لتتبع الأرقام المفقودة عند اللاعبين (ذاكرة الـ AI)
   const missingSuits: number[][] = Array.from({ length: playerCount }, () => []);
 
   return {
@@ -105,9 +104,9 @@ export function createRound(playerCount: number, variant: 'block' | 'draw'): Mat
     boneyard,
     currentPlayer: playerIndex,
     consecutivePasses: 0,
-    requiredFirstTileId: requiredTileId, // حفظ القطعة المجبر عليها للبداية
+    requiredFirstTileId: requiredTileId,
     missingSuits,
-    history: [] // سجل الحركات للتراجع والإعادة
+    history: []
   };
 }
 
@@ -151,7 +150,6 @@ export function legalMoves(hand: Tile[], chain: ChainTile[]): Move[] {
 export function isLegalMove(state: MatchState, playerIndex: number, move: Move): boolean {
   if (playerIndex !== state.currentPlayer) return false;
   
-  // ✅ قيد البداية الاحترافي: إجبار اللاعب على لعب القطعة المؤهلة لو كانت أول حركة
   if (state.chain.length === 0 && state.requiredFirstTileId && move.tileId !== state.requiredFirstTileId) {
     return false;
   }
@@ -192,15 +190,18 @@ export function applyMove(state: MatchState, playerIndex: number, move: Move): M
 
   const hands = state.hands.map((h, i) => (i === playerIndex ? newHand : h));
   
-  // تحديث السجل التاريخي للحركات
-  const updatedHistory = [...(state.history || []), { type: 'move', playerIndex, move }];
+  // ✅ إصلاح النوع هنا بإجبار المصفوفة على نوع السجل الصحيح
+  const updatedHistory: MatchState['history'] = [
+    ...state.history, 
+    { type: 'move', playerIndex, move }
+  ];
 
   return {
     ...state,
     hands,
     chain,
     consecutivePasses: 0,
-    requiredFirstTileId: null, // تم استهلاك حركة البداية الإجبارية
+    requiredFirstTileId: null,
     currentPlayer: (playerIndex + 1) % state.playerCount,
     history: updatedHistory
   };
@@ -225,7 +226,6 @@ export function applyDraw(state: MatchState, playerIndex: number): { state: Matc
   let boneyard = [...state.boneyard];
   const drawn: Tile[] = [];
 
-  // تحديث ذاكرة اللاعب: بما أنه سحب، فهو يفتقد الأرقام الحالية على الأطراف
   const ends = getEnds(state.chain);
   let updatedMissingSuits = [...state.missingSuits];
   if (ends) {
@@ -245,7 +245,11 @@ export function applyDraw(state: MatchState, playerIndex: number): { state: Matc
   const hands = state.hands.map((h, i) => (i === playerIndex ? hand : h));
   const mustPass = legalMoves(hand, state.chain).length === 0;
   
-  const updatedHistory = [...(state.history || []), { type: 'draw', playerIndex, count: drawn.length }];
+  // ✅ إصلاح النوع هنا لمنع الـ Type Mismatch للسحب
+  const updatedHistory: MatchState['history'] = [
+    ...state.history, 
+    { type: 'draw', playerIndex, count: drawn.length }
+  ];
 
   return {
     state: {
@@ -272,7 +276,6 @@ export function applyPass(state: MatchState, playerIndex: number): MatchState {
     throw new Error('Pass not allowed');
   }
 
-  // تحديث ذاكرة اللاعب: طالما عمل Pass فهو حتماً لا يملك أرقام الأطراف الحالية
   const ends = getEnds(state.chain);
   let updatedMissingSuits = [...state.missingSuits];
   if (ends) {
@@ -281,7 +284,11 @@ export function applyPass(state: MatchState, playerIndex: number): MatchState {
     updatedMissingSuits[playerIndex] = newMissing;
   }
 
-  const updatedHistory = [...(state.history || []), { type: 'pass', playerIndex }];
+  // ✅ إصلاح النوع هنا لمنع الـ Type Mismatch للتمرير
+  const updatedHistory: MatchState['history'] = [
+    ...state.history, 
+    { type: 'pass', playerIndex }
+  ];
 
   return {
     ...state,
@@ -301,7 +308,6 @@ export function handValue(hand: Tile[]): number {
 }
 
 export function isBlocked(state: MatchState): boolean {
-  // استخدام الـ `consecutivePasses` كشرط سريع أو التحقق العادي للأمان
   if (state.chain.length === 0) return false;
   if (state.consecutivePasses >= state.playerCount) return true;
   if (state.variant === 'draw' && state.boneyard.length > 0) return false;
@@ -312,7 +318,6 @@ export function isBlocked(state: MatchState): boolean {
 }
 
 export function roundStatus(state: MatchState): { type: 'ongoing' } | ({ type: 'ended' } & RoundResult) {
-  // 1. تحقق الدومينو (لاعب أنهى قطعه)
   for (let i = 0; i < state.hands.length; i++) {
     if (state.hands[i].length === 0) {
       let points = 0;
@@ -323,7 +328,6 @@ export function roundStatus(state: MatchState): { type: 'ongoing' } | ({ type: '
     }
   }
 
-  // 2. تحقق الانسداد (Blocked)
   if (isBlocked(state)) {
     let lowest = Infinity;
     let winners: number[] = [];
@@ -334,11 +338,10 @@ export function roundStatus(state: MatchState): { type: 'ongoing' } | ({ type: '
         lowest = v;
         winners = [i];
       } else if (v === lowest) {
-        winners.push(i); // تسجيل حالات التعادل
+        winners.push(i);
       }
     }
 
-    // ✅ حل مشكلة التعادل: إذا وجد أكثر من لاعب يملكون نفس أقل نقاط
     if (winners.length > 1) {
       return { type: 'ended', reason: 'blocked_tie', winnerIndex: -1, points: 0 };
     }
@@ -376,7 +379,6 @@ function evaluateMove(state: MatchState, playerIndex: number, move: Move, level:
   const tile = state.hands[playerIndex].find((t) => t.id === move.tileId)!;
   let score = 0;
 
-  // إستراتيجية عامة: التخلص من الأوراق الثقيلة منعاً للخسارة الكبيرة
   score += tile.total * 1.5;
 
   if (level !== 'easy') {
@@ -384,37 +386,31 @@ function evaluateMove(state: MatchState, playerIndex: number, move: Move, level:
     const counts = countSuits(state, playerIndex);
     const remaining = state.hands[playerIndex].filter((t) => t.id !== tile.id);
 
-    // ✅ حساب الطرف المكشوف المستقبلي بدقة
     let exposed: number;
     if (!ends) {
-      exposed = tile.bottom; // أول قطعة باللعبة
+      exposed = tile.bottom;
     } else if (move.side === 'left') {
       exposed = tile.top === ends.left ? tile.bottom : tile.top;
     } else {
       exposed = tile.top === ends.right ? tile.bottom : tile.top;
     }
 
-    // مرونة اليد الذاتية (Synergy)
     const synergy = remaining.filter((t) => t.top === exposed || t.bottom === exposed).length;
     score += synergy * 5;
 
-    // الدوبل خطير في اليد
     if (tile.isDouble) score += 4;
 
-    // ✅ ذكاء متقدم (مستوى Medium و Hard): استخدام الذاكرة لحشر الخصم التالي
     const nextPlayer = (playerIndex + 1) % state.playerCount;
     const nextPlayerMissing = state.missingSuits[nextPlayer] || [];
     
     if (nextPlayerMissing.includes(exposed)) {
-      // الخصم التالي لا يملك هذا الرقم حتماً! ميزة ممتازة لدفعه للسحب أو التمرير
       score += 12; 
     }
 
-    // ✅ مستوى Hard: تضييق الخيارات وجعل الأطراف متطابقة لصالحنا
     if (level === 'hard' && ends) {
       const otherEnd = move.side === 'left' ? ends.right : ends.left;
       if (exposed === otherEnd) {
-        score += 6; // حشر الطاولة كاملة على نفس الرقم
+        score += 6;
       }
     }
   }
