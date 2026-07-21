@@ -4,7 +4,7 @@
  */
 
 import type {
-  Tile, Player, GameState, MatchState, ChainTile, Pip, EndSide,
+  Tile, Player, GameState as GameStateType, MatchState, ChainTile, Pip, EndSide,
   DominoTile, BoardEnd, AIDifficulty,
 } from '../types/game';
 
