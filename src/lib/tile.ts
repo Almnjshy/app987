@@ -3,7 +3,7 @@
  * عمليات القطع المصححة رياضياً
  */
 
-import { Pip, DominoTile, OrientedTile } from './game';
+import { Pip, DominoTile, OrientedTile } from '../types/game';
 
 export const MAX_PIPS = 6;
 export const TOTAL_TILES = 28;
