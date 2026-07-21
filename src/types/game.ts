@@ -1,61 +1,331 @@
+/**
+ * Domino Master v5.0 — Core Types (merged)
+ * أنواع مدمجة من الملف المحلي + المستودع الأصلي
+ */
 
-3s
-2s
-5s
-27s
-5s
-Run npm run build
+// ============================================
+// CORE PIP & TILE TYPES
+// ============================================
+export type Pip = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
-> my-app@0.0.0 build
-> tsc -b && vite build
+export interface DominoTile {
+  readonly id: string;
+  readonly top: Pip;
+  readonly bottom: Pip;
+  readonly isDouble: boolean;
+  readonly value: number;
+}
 
-Error: src/components/Board.tsx(42,13): error TS2339: Property 'tile' does not exist on type 'DominoTile'.
-Error: src/components/Board.tsx(43,23): error TS2339: Property 'tile' does not exist on type 'DominoTile'.
-Error: src/components/Board.tsx(44,22): error TS2339: Property 'left' does not exist on type 'DominoTile'.
-Error: src/components/Board.tsx(45,23): error TS2339: Property 'right' does not exist on type 'DominoTile'.
-Error: src/components/PlayerAvatar.tsx(84,25): error TS2339: Property 'avatar' does not exist on type 'Player'.
-Error: src/lib/ai.ts(81,30): error TS2339: Property 'clone' does not exist on type 'BoardManager'.
-Error: src/lib/ai.ts(81,44): error TS2339: Property 'clone' does not exist on type 'BoardManager'.
-Error: src/lib/index.ts(7,15): error TS2307: Cannot find module './game-engine' or its corresponding type declarations.
-Error: src/lib/net.ts(11,3): error TS2305: Module '"@/lib/gameEngine"' has no exported member 'createRound'.
-Error: src/lib/net.ts(12,3): error TS2305: Module '"@/lib/gameEngine"' has no exported member 'applyMove'.
-Error: src/lib/net.ts(13,3): error TS2305: Module '"@/lib/gameEngine"' has no exported member 'applyDraw'.
-Error: src/lib/net.ts(14,3): error TS2305: Module '"@/lib/gameEngine"' has no exported member 'applyPass'.
-Error: src/lib/net.ts(15,3): error TS2305: Module '"@/lib/gameEngine"' has no exported member 'canDraw'.
-Error: src/lib/net.ts(16,3): error TS2305: Module '"@/lib/gameEngine"' has no exported member 'canPass'.
-Error: src/lib/net.ts(17,3): error TS2305: Module '"@/lib/gameEngine"' has no exported member 'roundStatus'.
-Error: src/lib/net.ts(18,3): error TS2305: Module '"@/lib/gameEngine"' has no exported member 'legalMoves'.
-Error: src/lib/net.ts(292,7): error TS4104: The type 'readonly DominoTile[]' is 'readonly' and cannot be assigned to the mutable type 'DominoTile[]'.
-Error: src/lib/net.ts(301,7): error TS4104: The type 'readonly ChainTile[]' is 'readonly' and cannot be assigned to the mutable type 'ChainTile[]'.
-Error: src/lib/snakeLayout.ts(147,39): error TS2339: Property 'side' does not exist on type 'ChainTile'.
-Error: src/lib/snakeLayout.ts(148,46): error TS2339: Property 'side' does not exist on type 'ChainTile'.
-Error: src/lib/snakeLayout.ts(149,45): error TS2339: Property 'side' does not exist on type 'ChainTile'.
-Error: src/lib/tests.ts(6,34): error TS2307: Cannot find module './game-engine' or its corresponding type declarations.
-Error: src/lib/tests.ts(13,46): error TS2459: Module '"./layout"' declares 'DEFAULT_LAYOUT' locally, but it is not exported.
-Error: src/lib/tests.ts(90,14): error TS2367: This comparison appears to be unintentional because the types '5' and '2' have no overlap.
-Error: src/lib/tests.ts(97,14): error TS2367: This comparison appears to be unintentional because the types '3' and '1' have no overlap.
-Error: src/lib/tile.ts(6,47): error TS2307: Cannot find module './game' or its corresponding type declarations.
-Error: src/screens/GameScreen.tsx(3,15): error TS2305: Module '"@/store/gameStore"' has no exported member 'SavedGame'.
-Error: src/screens/GameScreen.tsx(4,34): error TS2307: Cannot find module '@/lib/gameengine' or its corresponding type declarations.
-Error: src/screens/GameScreen.tsx(42,5): error TS2339: Property 'setPlayers' does not exist on type 'GameStore'.
-Error: src/screens/GameScreen.tsx(44,5): error TS2339: Property 'setMatch' does not exist on type 'GameStore'.
-Error: src/screens/GameScreen.tsx(46,5): error TS2339: Property 'setMatchScores' does not exist on type 'GameStore'.
-Error: src/screens/GameScreen.tsx(47,5): error TS2339: Property 'setRoundWinner' does not exist on type 'GameStore'.
-Error: src/screens/GameScreen.tsx(49,5): error TS2339: Property 'setMatchWinner' does not exist on type 'GameStore'.
-Error: src/screens/GameScreen.tsx(59,5): error TS2339: Property 'setHasSavedGame' does not exist on type 'GameStore'.
-Error: src/screens/GameScreen.tsx(195,43): error TS2339: Property 'avatar' does not exist on type 'Player'.
-Error: src/screens/GameScreen.tsx(238,25): error TS2339: Property 'isHuman' does not exist on type 'Player'.
-Error: src/screens/GameScreen.tsx(241,37): error TS2554: Expected 1 arguments, but got 3.
-Error: src/screens/GameScreen.tsx(549,28): error TS2339: Property 'tiles' does not exist on type 'Player'.
-Error: src/screens/GameScreen.tsx(624,30): error TS2339: Property 'tileCount' does not exist on type 'Player'.
-Error: src/screens/GameScreen.tsx(649,37): error TS2339: Property 'tiles' does not exist on type 'Player'.
-Error: src/screens/GameScreen.tsx(663,27): error TS2339: Property 'tiles' does not exist on type 'Player'.
-Error: src/screens/MatchEndScreen.tsx(21,53): error TS2339: Property 'isHuman' does not exist on type 'Player'.
-Error: src/screens/NetworkGame.tsx(215,11): error TS2322: Type 'ChainTile[]' is not assignable to type 'DominoTile[]'.
-  Type 'ChainTile' is missing the following properties from type 'DominoTile': id, top, bottom, isDouble, value
-Error: src/store/gameStore.ts(7,34): error TS2307: Cannot find module '@/lib/game-engine' or its corresponding type declarations.
-Error: src/store/gameStore.ts(69,3): error TS2300: Duplicate identifier 'currentScreen'.
-Error: src/store/gameStore.ts(84,3): error TS2300: Duplicate identifier 'currentScreen'.
-Error: src/types/game.ts(146,13): error TS2300: Duplicate identifier 'Difficulty'.
-Error: src/types/game.ts(263,13): error TS2300: Duplicate identifier 'Difficulty'.
-Error: Process completed with exit code 2
+/** Alias for backward compatibility (from original repo) */
+export type Tile = DominoTile;
+
+export interface OrientedTile extends DominoTile {
+  readonly orientation: 'normal' | 'flipped';
+  readonly leadingPip: Pip;
+  readonly trailingPip: Pip;
+}
+
+export type BoardEnd = 'left' | 'right';
+
+/** Alias for backward compatibility (from original repo) */
+export type EndSide = BoardEnd;
+
+// ============================================
+// BOARD STATE
+// ============================================
+export interface BoardState {
+  readonly tiles: readonly OrientedTile[];
+  readonly leftPip: Pip | null;
+  readonly rightPip: Pip | null;
+  readonly length: number;
+  readonly isEmpty: boolean;
+  readonly hash: string;
+}
+
+// ============================================
+// CHAIN TILE (from original repo)
+// ============================================
+export interface ChainTile {
+  readonly tile: DominoTile;
+  readonly left: Pip;
+  readonly right: Pip;
+  readonly orientation: 'normal' | 'flipped';
+  readonly side?: 'left' | 'right';
+}
+
+// ============================================
+// PLAYER & GAME STATE
+// ============================================
+export type PlayerType = 'human' | 'ai';
+
+export interface Player {
+  readonly id: string;
+  readonly name: string;
+  readonly type: PlayerType;
+  readonly hand: readonly DominoTile[];
+  readonly score: number;
+  readonly handValue: number;
+  readonly isCurrent: boolean;
+}
+
+/** Player view for UI (from original repo) */
+export interface PlayerView {
+  readonly id: string;
+  readonly name: string;
+  readonly avatar: string;
+  readonly isHuman: boolean;
+  readonly tiles: readonly DominoTile[];
+  readonly score: number;
+  readonly isActive: boolean;
+  readonly tileCount: number;
+}
+
+export interface Move {
+  readonly tile: DominoTile;
+  readonly end: BoardEnd;
+  readonly orientedTile: OrientedTile;
+  readonly isPass: boolean;
+  readonly isDraw: boolean;
+}
+
+export type GamePhase = 'setup' | 'playing' | 'blocked' | 'round_end' | 'game_over';
+
+export interface GameState {
+  readonly board: BoardState;
+  readonly players: readonly Player[];
+  readonly currentPlayerIndex: number;
+  readonly boneyard: readonly DominoTile[];
+  readonly phase: GamePhase;
+  readonly round: number;
+  readonly moveHistory: readonly Move[];
+  readonly consecutivePasses: number;
+  readonly winner: Player | null;
+  readonly lastRoundWinner: Player | null;
+  readonly scores: ReadonlyMap<string, number>;
+}
+
+export interface GameConfig {
+  readonly playerNames: readonly string[];
+  readonly targetScore: number;
+  readonly maxRounds: number;
+}
+
+export const DEFAULT_CONFIG: GameConfig = {
+  playerNames: ['Player 1', 'Player 2'],
+  targetScore: 100,
+  maxRounds: 10,
+};
+
+// ============================================
+// MATCH STATE (from original repo)
+// ============================================
+export interface MatchState {
+  readonly hands: readonly (readonly DominoTile[])[];
+  readonly chain: readonly ChainTile[];
+  readonly boneyard: readonly DominoTile[];
+  readonly currentPlayer: number;
+  readonly playerCount: number;
+  readonly variant: 'draw' | 'block';
+  readonly scores: readonly number[];
+}
+
+// ============================================
+// LAYOUT TYPES
+// ============================================
+export interface BoardPosition {
+  readonly x: number;
+  readonly y: number;
+  readonly rotation: number;
+  readonly tile: OrientedTile;
+  readonly index: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface LayoutConfig {
+  readonly viewportWidth: number;
+  readonly viewportHeight: number;
+  readonly tileWidth: number;
+  readonly tileHeight: number;
+  readonly gap: number;
+  readonly maxRowLength: number;
+}
+
+export const DEFAULT_LAYOUT: LayoutConfig = {
+  viewportWidth: 800,
+  viewportHeight: 600,
+  tileWidth: 60,
+  tileHeight: 30,
+  gap: 5,
+  maxRowLength: 8,
+};
+
+// ============================================
+// AI TYPES
+// ============================================
+export type AIDifficulty = 'beginner' | 'intermediate' | 'advanced' | 'expert';
+
+export interface AIMove {
+  readonly tile: DominoTile;
+  readonly end: BoardEnd;
+  readonly score: number;
+}
+
+// ============================================
+// UI / STORE TYPES (from original repo)
+// ============================================
+export type ScreenType =
+  | 'title'
+  | 'menu'
+  | 'levelSelect'
+  | 'playing'
+  | 'paused'
+  | 'matchEnd'
+  | 'settings'
+  | 'statistics'
+  | 'tutorial'
+  | 'networkLobby'
+  | 'networkGame';
+
+export type Difficulty = 'veryEasy' | 'easy' | 'medium' | 'hard' | 'veryHard' | 'expert' | 'champion';
+export type AILevel = 'easy' | 'medium' | 'hard';
+
+export interface LevelConfig {
+  level: number;
+  name: string;
+  nameAr: string;
+  targetScore: number;
+  aiCount: number;
+  aiDifficulty: Difficulty;
+  description: string;
+  descriptionAr: string;
+}
+
+export interface GameSettings {
+  soundEnabled: boolean;
+  musicEnabled: boolean;
+  vibrationEnabled: boolean;
+  language: 'ar' | 'en';
+}
+
+export interface GameProgress {
+  unlockedLevel: number;
+  levelStars: Record<number, number>;
+  totalScore: number;
+  totalWins: number;
+  totalLosses: number;
+  longestChain: number;
+  highestScore: number;
+}
+
+export type PowerUpType = 'peek' | 'undo' | 'extraTime' | 'hint';
+
+export interface PowerUp {
+  type: PowerUpType;
+  name: string;
+  nameAr: string;
+  icon: string;
+  uses: number;
+  maxUses: number;
+}
+
+export type GameMode = 'ai' | 'network' | 'tournament' | 'online';
+
+export interface SavedGame {
+  match: MatchState;
+  matchScores: number[];
+  playerNames: string[];
+  playerAvatars: string[];
+  level: number;
+  mode: GameMode;
+  targetScore: number;
+}
+
+// ============================================
+// NETWORK TYPES (from original repo)
+// ============================================
+export interface NetPlayerView {
+  name: string;
+  isYou: boolean;
+  isActive: boolean;
+  tileCount: number;
+  score: number;
+  connected: boolean;
+}
+
+export interface NetSnapshot {
+  chain: ChainTile[];
+  currentPlayer: number;
+  youIndex: number;
+  matchWinnerIndex: number | null;
+  players: NetPlayerView[];
+  message: string | null;
+  boneyardCount: number;
+  targetScore: number;
+  yourHand: DominoTile[];
+}
+
+export type ClientAction =
+  | { type: 'join'; name: string }
+  | { type: 'play'; tileId: string; side: BoardEnd }
+  | { type: 'draw' }
+  | { type: 'pass' }
+  | { type: 'chat'; text: string }
+  | { type: 'leave' };
+
+export type HostMessage =
+  | { type: 'lobby'; players: { name: string; isHost: boolean }[] }
+  | { type: 'snapshot'; snap: NetSnapshot }
+  | { type: 'chat'; from: string; text: string }
+  | { type: 'error'; message: string }
+  | { type: 'closed' };
+
+// ============================================
+// ERROR TYPES
+// ============================================
+export class DominoError extends Error {
+  constructor(message: string, public readonly code: string) {
+    super(message);
+    this.name = 'DominoError';
+  }
+}
+
+export class InvalidMoveError extends DominoError {
+  constructor(reason: string) {
+    super(`Invalid move: ${reason}`, 'INVALID_MOVE');
+  }
+}
+
+export class GameStateError extends DominoError {
+  constructor(reason: string) {
+    super(`Game state error: ${reason}`, 'GAME_STATE');
+  }
+}
+
+// ============================================
+// CONSTANTS (from original repo)
+// ============================================
+export const LEVELS: LevelConfig[] = [
+  { level: 1, name: 'First Steps', nameAr: 'الخطوات الأولى', targetScore: 50, aiCount: 1, aiDifficulty: 'veryEasy', description: 'Learn the basics', descriptionAr: 'تعلم الأساسيات' },
+  { level: 2, name: 'Apprentice', nameAr: 'المبتدئ', targetScore: 60, aiCount: 1, aiDifficulty: 'easy', description: 'Standard play', descriptionAr: 'لعب قياسي' },
+  { level: 3, name: 'Rising Star', nameAr: 'النجم الصاعد', targetScore: 70, aiCount: 1, aiDifficulty: 'medium', description: 'Faster AI', descriptionAr: 'ذكاء أسرع' },
+  { level: 4, name: 'Challenger', nameAr: 'المتحدي', targetScore: 80, aiCount: 2, aiDifficulty: 'medium', description: '2 AI opponents', descriptionAr: 'خصمان' },
+  { level: 5, name: 'Expert', nameAr: 'الخبير', targetScore: 100, aiCount: 2, aiDifficulty: 'hard', description: 'Tough opponents', descriptionAr: 'خصوم أقوياء' },
+  { level: 6, name: 'Master', nameAr: 'المعلم', targetScore: 120, aiCount: 2, aiDifficulty: 'hard', description: 'Strategic play', descriptionAr: 'لعب استراتيجي' },
+  { level: 7, name: 'Grandmaster', nameAr: 'الأستاذ الكبير', targetScore: 140, aiCount: 3, aiDifficulty: 'veryHard', description: '3 AI opponents', descriptionAr: '3 خصوم' },
+  { level: 8, name: 'Legend', nameAr: 'الأسطورة', targetScore: 160, aiCount: 3, aiDifficulty: 'veryHard', description: 'Elite AI', descriptionAr: 'ذكاء النخبة' },
+  { level: 9, name: 'Immortal', nameAr: 'الخلود', targetScore: 180, aiCount: 3, aiDifficulty: 'expert', description: 'Near perfect', descriptionAr: 'قرب الكمال' },
+  { level: 10, name: 'Champion', nameAr: 'البطل', targetScore: 200, aiCount: 3, aiDifficulty: 'champion', description: 'Ultimate challenge', descriptionAr: 'التحدي الأقصى' },
+];
+
+export const DIFFICULTY_SETTINGS: Record<string, { aiLevel: AILevel; thinkTimeMin: number; thinkTimeMax: number }> = {
+  veryEasy: { aiLevel: 'easy', thinkTimeMin: 500, thinkTimeMax: 1500 },
+  easy: { aiLevel: 'easy', thinkTimeMin: 800, thinkTimeMax: 2000 },
+  medium: { aiLevel: 'medium', thinkTimeMin: 1000, thinkTimeMax: 2500 },
+  hard: { aiLevel: 'hard', thinkTimeMin: 1200, thinkTimeMax: 3000 },
+  veryHard: { aiLevel: 'hard', thinkTimeMin: 1500, thinkTimeMax: 3500 },
+  expert: { aiLevel: 'hard', thinkTimeMin: 1800, thinkTimeMax: 4000 },
+  champion: { aiLevel: 'hard', thinkTimeMin: 2000, thinkTimeMax: 4500 },
+};
+
+export const AI_NAMES = ['كريم', 'سامي', 'عمر', 'خالد', 'طارق', 'ياسر', 'هشام', 'فادي'];
