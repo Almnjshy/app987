@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import type { SavedGame } from '@/store/gameStore';
-import { DominoGameEngine } from '@/lib/game-engine';
+import { DominoGameEngine } from '@/lib/gameengine';
 import { DominoAI } from '@/lib/ai';
 import { BoardManager } from '@/lib/board';
 import { hasPlayableTile, getValidEnds } from '@/lib/tile';
