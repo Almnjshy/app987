@@ -1,2 +1,1 @@
-// src/types/index.ts
-export * from './game';
+export * from './gameengine';
