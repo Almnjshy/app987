@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useGameStore } from '@/store/gameStore';
-import type { SavedGame } from '@/store/gameStore';
+import type { SavedGame } from '@/types/game';
 import { DominoGameEngine } from '@/lib/gameengine';
 import { DominoAI } from '@/lib/ai';
 import { BoardManager } from '@/lib/board';
@@ -67,7 +67,6 @@ export default function GameScreen() {
   const [gameReady, setGameReady] = useState(false);
   const [drag, setDrag] = useState<{ tile: Tile; x: number; y: number } | null>(null);
 
-  // Engine instances (local to this screen)
   const engineRef = useRef<DominoGameEngine | null>(null);
   const aiRef = useRef<DominoAI | null>(null);
 
@@ -88,7 +87,6 @@ export default function GameScreen() {
 
   /* ------------------------- تهيئة المباراة ------------------------- */
   useEffect(() => {
-    // استكمال مباراة محفوظة
     let saved: SavedGame | null = null;
     try {
       const raw = localStorage.getItem(SAVE_KEY);
@@ -99,7 +97,6 @@ export default function GameScreen() {
     sessionStorage.removeItem('domino_resume');
 
     if (saved && wantResume) {
-      // Restore from saved — create engine from saved state
       const aiCount = saved.playerNames.length - 1;
       const playerNames = saved.playerNames;
       const engine = new DominoGameEngine({
@@ -107,7 +104,6 @@ export default function GameScreen() {
         targetScore: saved.targetScore || targetScore,
         maxRounds: 10,
       });
-      // Note: full save/restore of engine state would need serialization
       engineRef.current = engine;
       aiRef.current = new DominoAI(mapDifficulty(aiLevel));
 
@@ -115,10 +111,10 @@ export default function GameScreen() {
       const restoredPlayers: Player[] = playerNames.map((name, i) => ({
         id: i === 0 ? 'human' : `ai-${i}`,
         name,
-        avatar: saved.playerAvatars[i],
+        avatar: saved!.playerAvatars[i],
         isHuman: i === 0,
         tiles: state.players[i]?.hand || [],
-        score: saved.matchScores[i] || 0,
+        score: saved!.matchScores[i] || 0,
         isActive: state.currentPlayerIndex === i,
         tileCount: state.players[i]?.hand.length || 0,
       }));
@@ -130,7 +126,6 @@ export default function GameScreen() {
       return;
     }
 
-    // مباراة جديدة
     const aiCount = isTournament ? tournamentStage : levelConfig.aiCount;
     const playerCount = aiCount + 1;
     const playerNames = ['أنت', ...Array.from({ length: aiCount }, (_, i) => AI_NAMES[i % AI_NAMES.length])];
@@ -236,7 +231,7 @@ export default function GameScreen() {
       setMatchWinner(winnerPlayer?.id ?? null);
       clearSave();
       if (winnerPlayer?.isHuman) {
-        const margin = newScores[winnerIdx] - Math.max(...newScores.filter((_, i) => i !== winnerIdx));
+        const margin = newScores[winnerIdx] - Math.max(...newScores.filter((_: number, i: number) => i !== winnerIdx));
         const stars = margin >= 40 ? 3 : margin >= 20 ? 2 : 1;
         completeLevel(currentLevel, stars, newScores[winnerIdx]);
       } else {
@@ -246,7 +241,6 @@ export default function GameScreen() {
       return true;
     }
 
-    // جولة جديدة
     setTimeout(() => {
       const engine = engineRef.current;
       if (engine) {
@@ -508,7 +502,6 @@ export default function GameScreen() {
           return;
         }
         usePowerUp(type);
-        // Note: full undo would need engine state serialization
         setGameMessage('تم التراجع');
         setTimeout(() => setGameMessage(''), 1500);
         break;
