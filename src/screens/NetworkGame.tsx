@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useGameStore } from '@/store/gameStore';
 import { getHostSession, getGuestSession, clearSessions } from '@/lib/netSession';
 import type { NetSnapshot } from '@/lib/net';
-import { getValidSides, canPlayTile, legalMoves } from '@/lib/gameEngine';
+import { BoardManager } from '@/lib/board';
+import { getValidEnds, hasPlayableTile } from '@/lib/tile';
 import type { Tile, EndSide } from '@/types/game';
 import { DominoTile } from '@/components/DominoTile';
 import { Board } from '@/components/Board';
@@ -27,6 +28,21 @@ export default function NetworkGame() {
   const host = getHostSession();
   const guest = getGuestSession();
 
+  // Helper: create BoardManager from snapshot chain
+  const getBoardFromSnap = useCallback(() => {
+    if (!snap || snap.chain.length === 0) return BoardManager.createEmpty();
+    const first = snap.chain[0];
+    const last = snap.chain[snap.chain.length - 1];
+    return BoardManager.fromState({
+      tiles: snap.chain as any,
+      leftPip: first?.left ?? null,
+      rightPip: last?.right ?? null,
+      length: snap.chain.length,
+      isEmpty: snap.chain.length === 0,
+      hash: '',
+    });
+  }, [snap]);
+
   useEffect(() => {
     if (host) {
       host.onSnapshot = (s) => {
@@ -37,7 +53,6 @@ export default function NetworkGame() {
       };
       host.onChat = (from, text) => setChat((c) => [...c, { from, text }]);
       host.broadcastAll();
-      // اللاعبون المنقطعون يُدارون آلياً من المحرك
       const interval = setInterval(() => host.autoPlayDisconnected(), 2000);
       return () => clearInterval(interval);
     }
@@ -67,10 +82,13 @@ export default function NetworkGame() {
 
   const handleTileClick = (tile: Tile) => {
     if (!isMyTurn || !snap) return;
-    if (!canPlayTile(tile, snap.chain)) return;
+    const board = getBoardFromSnap();
+    if (!board.canPlay(tile)) return;
     if (selectedTile?.id === tile.id) {
-      const sides = getValidSides(tile, snap.chain);
-      sendAction({ type: 'play', tileId: tile.id, side: sides[0] });
+      const sides = getValidEnds(tile, board.leftPip, board.rightPip);
+      if (sides.length > 0) {
+        sendAction({ type: 'play', tileId: tile.id, side: sides[0] });
+      }
     } else {
       setSelectedTile(tile);
     }
@@ -78,7 +96,8 @@ export default function NetworkGame() {
 
   const handleSelectSide = (side: EndSide) => {
     if (selectedTile && snap) {
-      const sides = getValidSides(selectedTile, snap.chain);
+      const board = getBoardFromSnap();
+      const sides = getValidEnds(selectedTile, board.leftPip, board.rightPip);
       if (sides.includes(side)) sendAction({ type: 'play', tileId: selectedTile.id, side });
     }
   };
@@ -87,10 +106,6 @@ export default function NetworkGame() {
     if (!text.trim()) return;
     const myName = snap?.players[snap.youIndex]?.name ?? 'أنا';
     if (host) {
-      host['broadcast' as keyof HostSessionType] as never; // type guard no-op
-    }
-    if (host) {
-      // المضيف يرسل للجميع ويضيف محلياً
       (host as unknown as { broadcast: (m: unknown) => void }).broadcast({ type: 'chat', from: myName, text: text.trim() });
       setChat((c) => [...c, { from: myName, text: text.trim() }]);
     } else if (guest) {
@@ -125,9 +140,16 @@ export default function NetworkGame() {
     );
   }
 
-  const myMoves = isMyTurn ? legalMoves(snap.yourHand, snap.chain) : [];
+  // Calculate playable tiles using new engine
+  const board = getBoardFromSnap();
+  const myMoves = isMyTurn && snap.yourHand
+    ? snap.yourHand.filter((t: Tile) => board.canPlay(t)).map((t: Tile) => ({
+        tileId: t.id,
+        side: getValidEnds(t, board.leftPip, board.rightPip)[0] || 'right' as EndSide,
+      }))
+    : [];
   const playableIds = new Set(myMoves.map((m) => m.tileId));
-  const selectedSides = selectedTile ? getValidSides(selectedTile, snap.chain) : [];
+  const selectedSides = selectedTile ? getValidEnds(selectedTile, board.leftPip, board.rightPip) : [];
   const canIDraw = isMyTurn && myMoves.length === 0 && snap.boneyardCount > 0;
   const canIPass = isMyTurn && myMoves.length === 0 && snap.boneyardCount === 0;
   const opponents = snap.players.filter((_, i) => i !== snap.youIndex);
@@ -137,6 +159,7 @@ export default function NetworkGame() {
 
   const emojis = ['😀', '😂', '😎', '😤', '👍', '👎', '🎉', '🔥'];
 
+  /* ======================== JSX — NO CHANGES ======================== */
   return (
     <div className="fixed inset-0 flex flex-col overflow-hidden bg-[#0D7A3A]">
       <div
@@ -211,7 +234,7 @@ export default function NetworkGame() {
       {/* يدي */}
       <div className="relative z-10 py-1">
         <div className="flex items-center justify-center gap-1 overflow-x-auto pb-2 px-2">
-          {snap.yourHand.map((tile) => {
+          {snap.yourHand.map((tile: Tile) => {
             const isPlayable = playableIds.has(tile.id);
             const isSelected = selectedTile?.id === tile.id;
             return (
