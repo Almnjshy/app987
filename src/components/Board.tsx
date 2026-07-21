@@ -1,26 +1,21 @@
 import { memo, useMemo, useRef, useState, useEffect } from 'react';
-import type { DominoTile as Tile, BoardEnd as EndSide } from '@/types/game';
+import type { ChainTile, EndSide } from '@/types/game';
 import { calculateSnakeLayout, toBoardPositions } from '@/lib/layout';
 import { orientFirstTile } from '@/lib/tile';
 import { DominoTile } from './DominoTile';
 
 interface BoardProps {
-  chain: Tile[];
+  chain: ChainTile[];
   className?: string;
   highlightEnds?: EndSide[];
   onSelectSide?: (side: EndSide) => void;
   dropSideRefs?: React.MutableRefObject<{ left: HTMLDivElement | null; right: HTMLDivElement | null }>;
 }
 
-/**
- * مكون Board — يعرض سلسلة الدومينو على الطاولة.
- * يستخدم المحرك الجديد: calculateSnakeLayout + toBoardPositions
- */
 function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSide, dropSideRefs }: BoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
 
-  // Update container size
   useEffect(() => {
     const updateSize = () => {
       if (containerRef.current) {
@@ -33,14 +28,12 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     return () => window.removeEventListener('resize', updateSize);
   }, []);
 
-  // Calculate layout using new engine
   const positions = useMemo(() => {
     if (chain.length === 0) return [];
-
-    // Convert ChainTile[] to OrientedTile[] for layout engine
+    
     const orientedTiles = chain.map(ct => ({
       ...ct.tile,
-      orientation: ct.tile.orientation || 'normal' as const,
+      orientation: ct.orientation,
       leadingPip: ct.left,
       trailingPip: ct.right,
     }));
@@ -57,7 +50,6 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     return toBoardPositions(nodes);
   }, [chain, containerSize]);
 
-  // Calculate center offset
   const bounds = useMemo(() => {
     if (positions.length === 0) return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
     const xs = positions.map(p => p.x);
@@ -74,11 +66,7 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
   const offsetY = containerSize.height / 2 - (bounds.minY + bounds.maxY) / 2;
 
   return (
-    <div
-      ref={containerRef}
-      className={`relative w-full h-full overflow-hidden ${className}`}
-    >
-      {/* Chain tiles */}
+    <div ref={containerRef} className={`relative w-full h-full overflow-hidden ${className}`}>
       {positions.map((pos, idx) => (
         <div
           key={pos.tile.id}
@@ -92,24 +80,16 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
             zIndex: idx + 1,
           }}
         >
-          <DominoTile
-            tile={pos.tile}
-            size="md"
-            faceUp={true}
-            rotation={0}
-          />
+          <DominoTile tile={pos.tile} size="md" faceUp={true} rotation={0} />
         </div>
       ))}
 
-      {/* Drop zones for ends */}
       {chain.length > 0 && onSelectSide && (
         <>
           {highlightEnds.includes('left') && (
             <div
               ref={(el) => { if (dropSideRefs) dropSideRefs.current.left = el; }}
-              className="absolute w-16 h-16 rounded-full border-2 border-dashed border-[#C9A84C]/50 
-                         flex items-center justify-center cursor-pointer
-                         hover:bg-[#C9A84C]/20 hover:border-[#C9A84C] transition-all"
+              className="absolute w-16 h-16 rounded-full border-2 border-dashed border-[#C9A84C]/50 flex items-center justify-center cursor-pointer hover:bg-[#C9A84C]/20 hover:border-[#C9A84C] transition-all"
               style={{
                 left: positions[0] ? positions[0].x + offsetX - 50 : 0,
                 top: positions[0] ? positions[0].y + offsetY : 0,
@@ -124,16 +104,10 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
           {highlightEnds.includes('right') && (
             <div
               ref={(el) => { if (dropSideRefs) dropSideRefs.current.right = el; }}
-              className="absolute w-16 h-16 rounded-full border-2 border-dashed border-[#C9A84C]/50 
-                         flex items-center justify-center cursor-pointer
-                         hover:bg-[#C9A84C]/20 hover:border-[#C9A84C] transition-all"
+              className="absolute w-16 h-16 rounded-full border-2 border-dashed border-[#C9A84C]/50 flex items-center justify-center cursor-pointer hover:bg-[#C9A84C]/20 hover:border-[#C9A84C] transition-all"
               style={{
-                left: positions[positions.length - 1] 
-                  ? positions[positions.length - 1].x + offsetX + 50 
-                  : 0,
-                top: positions[positions.length - 1] 
-                  ? positions[positions.length - 1].y + offsetY 
-                  : 0,
+                left: positions[positions.length - 1] ? positions[positions.length - 1].x + offsetX + 50 : 0,
+                top: positions[positions.length - 1] ? positions[positions.length - 1].y + offsetY : 0,
                 transform: 'translate(-50%, -50%)',
                 zIndex: 100,
               }}
