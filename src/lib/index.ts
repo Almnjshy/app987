@@ -4,7 +4,7 @@
 
 export * from './tile';
 export * from './board';
-export * from './game-engine';
+export * from './gameengine';
 export * from './layout';
 export * from './ai';
 export * from './tests';
