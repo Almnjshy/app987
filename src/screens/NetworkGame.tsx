@@ -4,7 +4,7 @@ import { getHostSession, getGuestSession, clearSessions } from '@/lib/netSession
 import type { NetSnapshot } from '@/lib/net';
 import { BoardManager } from '@/lib/board';
 import { getValidEnds, hasPlayableTile } from '@/lib/tile';
-import type { Tile, EndSide } from '@/types/game';
+import type { DominoTile as Tile, BoardEnd as EndSide } from '@/types/game';
 import { DominoTile } from '@/components/DominoTile';
 import { Board } from '@/components/Board';
 import { MessageCircle, Smile, LogOut, Send, Trophy } from 'lucide-react';
