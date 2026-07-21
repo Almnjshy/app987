@@ -16,7 +16,7 @@ import {
   canPass,
   roundStatus,
   legalMoves,
-} from '@/lib/gameEngine';
+} from '@/lib/gameengine';
 
 const RTC_CONFIG: RTCConfiguration = {
   iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }],
@@ -254,18 +254,15 @@ export class HostSession {
   private afterTransition() {
     if (!this.match) return;
     const status = roundStatus(this.match);
-    if (status.type === 'ended') {
+    if (status.phase === 'round_end') {
       const names = [this.hostName, ...this.guests.map((g) => g.name)];
-      this.scores[status.winnerIndex] += status.points;
-      this.roundWinner = names[status.winnerIndex];
-      this.message = status.reason === 'blocked'
-        ? `انسداد اللعب! الفائز: ${names[status.winnerIndex]}`
-        : `${names[status.winnerIndex]} أنهى قطعه!`;
+      this.scores[status.winner!] += status.points!;
+      this.roundWinner = names[status.winner!];
+      this.message = 'جولة منتهية!';
 
-      if (this.scores[status.winnerIndex] >= NETWORK_TARGET_SCORE) {
-        this.matchWinnerIndex = status.winnerIndex;
+      if (this.scores[status.winner!] >= NETWORK_TARGET_SCORE) {
+        this.matchWinnerIndex = status.winner!;
       } else {
-        // جولة جديدة تلقائياً بعد مهلة قصيرة
         this.broadcastAll();
         setTimeout(() => {
           if (!this.match || this.matchWinnerIndex !== null) return;
@@ -289,7 +286,7 @@ export class HostSession {
     const names = this.names();
     return {
       youIndex: playerIndex,
-      yourHand: m.hands[playerIndex],
+      yourHand: [...m.hands[playerIndex]], // نسخ لحل readonly
       players: names.map((name, i) => ({
         name,
         isYou: i === playerIndex,
@@ -298,7 +295,7 @@ export class HostSession {
         score: this.scores[i] || 0,
         connected: i === 0 ? true : (this.guests[i - 1]?.connected ?? false),
       })),
-      chain: m.chain,
+      chain: [...m.chain], // نسخ لحل readonly
       boneyardCount: m.boneyard.length,
       currentPlayer: m.currentPlayer,
       message: this.message,
