@@ -38,7 +38,7 @@ export type {
 // تصدير الأنواع مع أسماء مستعارة
 export type { GameState as EngineGameState } from './gameengine';
 
-// تصدير القيم من gameengine.ts (دوال، classes، constants)
+// تصدير القيم من gameengine.ts فقط (المصدر الوحيد)
 export {
   DominoGameEngine,
   createRound,
@@ -57,21 +57,6 @@ export {
   toBoardPositions,
   runAllTests,
 } from './gameengine';
-
-// تصدير الأنواع من layout.ts
-export type { Direction, LayoutNode } from './layout';
-
-// تصدير القيم من layout.ts
-export { calculateSnakeLayout, verifyLayout, toBoardPositions } from './layout';
-
-// تصدير الأنواع من ai.ts
-export type { AIDifficulty, AIMove } from './ai';
-
-// تصدير القيم من ai.ts
-export { DominoAI } from './ai';
-
-// تصدير من tests.ts (قيم فقط)
-export { runAllTests } from './tests';
 
 // تصدير الشبكة (net.ts و netSession.ts — كلها قيم)
 export * from './net';
