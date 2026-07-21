@@ -5,7 +5,7 @@
 // تصدير BoardManager
 export { BoardManager } from './board';
 
-// تصدير من tile.ts
+// تصدير من tile.ts (كلها قيم)
 export {
   MAX_PIPS,
   TOTAL_TILES,
@@ -28,15 +28,17 @@ export {
 // تصدير الأنواع فقط (export type) لـ isolatedModules
 export type {
   GameConfig,
-  DEFAULT_CONFIG,
   Move,
   PlayerState,
+  AIMove,
+  LayoutConfig,
+  LayoutNode,
 } from './gameengine';
 
 // تصدير الأنواع مع أسماء مستعارة
 export type { GameState as EngineGameState } from './gameengine';
 
-// تصدير المحرك والدوال
+// تصدير القيم من gameengine.ts (دوال، classes، constants)
 export {
   DominoGameEngine,
   createRound,
@@ -49,25 +51,28 @@ export {
   applyDraw,
   applyPass,
   roundStatus,
-  AIMove,
   DominoAI,
-  LayoutConfig,
   DEFAULT_LAYOUT,
-  LayoutNode,
   calculateSnakeLayout,
   toBoardPositions,
   runAllTests,
 } from './gameengine';
 
-// تصدير الشبكة
+// تصدير الأنواع من layout.ts
+export type { Direction, LayoutNode } from './layout';
+
+// تصدير القيم من layout.ts
+export { calculateSnakeLayout, verifyLayout, toBoardPositions } from './layout';
+
+// تصدير الأنواع من ai.ts
+export type { AIDifficulty, AIMove } from './ai';
+
+// تصدير القيم من ai.ts
+export { DominoAI } from './ai';
+
+// تصدير من tests.ts (قيم فقط)
+export { runAllTests } from './tests';
+
+// تصدير الشبكة (net.ts و netSession.ts — كلها قيم)
 export * from './net';
 export * from './netSession';
-
-// تصدير التخطيط
-export * from './layout';
-
-// تصدير الذكاء الاصطناعي
-export * from './ai';
-
-// تصدير الاختبارات
-export * from './tests';
