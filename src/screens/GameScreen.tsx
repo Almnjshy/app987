@@ -233,7 +233,8 @@ export default function GameScreen() {
       if (winnerPlayer?.isHuman) {
         const margin = newScores[winnerIdx] - Math.max(...newScores.filter((_: number, i: number) => i !== winnerIdx));
         const stars = margin >= 40 ? 3 : margin >= 20 ? 2 : 1;
-        completeLevel(currentLevel, stars, newScores[winnerIdx]);
+        // ✅ تعديل: معامل واحد فقط
+        completeLevel(stars);
       } else {
         addLoss();
       }
