@@ -42,12 +42,16 @@ export class BoardManager {
   get length(): number { return this.tiles.length; }
   get hash(): string { return this._hash; }
 
-  // ============================================
-  // CORE: PLAY TILE
-  // ============================================
+  clone(): BoardManager {
+    const bm = new BoardManager();
+    bm.tiles = [...this.tiles];
+    bm._leftPip = this._leftPip;
+    bm._rightPip = this._rightPip;
+    bm._hash = this._hash;
+    return bm;
+  }
 
   playTile(tile: DominoTile, end: BoardEnd): OrientedTile | null {
-    // Case 1: Empty board (first move)
     if (this.isEmpty) {
       const oriented = orientFirstTile(tile);
       this.tiles.push(oriented);
@@ -57,7 +61,6 @@ export class BoardManager {
       return oriented;
     }
 
-    // Case 2: Play on left end (HEAD)
     if (end === 'left') {
       if (this._leftPip === null) return null;
       const oriented = orientTile(tile, this._leftPip);
@@ -68,7 +71,6 @@ export class BoardManager {
       return oriented;
     }
 
-    // Case 3: Play on right end (TAIL)
     if (end === 'right') {
       if (this._rightPip === null) return null;
       const oriented = orientTile(tile, this._rightPip);
@@ -82,10 +84,6 @@ export class BoardManager {
     return null;
   }
 
-  // ============================================
-  // VALIDATION — ONLY TWO ENDS
-  // ============================================
-
   canPlay(tile: DominoTile): boolean {
     if (this.isEmpty) return true;
     const left = this._leftPip;
@@ -95,7 +93,6 @@ export class BoardManager {
     return false;
   }
 
-  /** الأطراف الصالحة — فقط left أو right */
   getValidEnds(tile: DominoTile): BoardEnd[] {
     if (this.isEmpty) return ['left', 'right'];
     const ends: BoardEnd[] = [];
@@ -110,7 +107,6 @@ export class BoardManager {
     return ends;
   }
 
-  /** التحقق من صحة اللوحة — سلسلة خطية فقط */
   isValid(): boolean {
     if (this.tiles.length <= 1) return true;
     for (let i = 1; i < this.tiles.length; i++) {
@@ -123,12 +119,10 @@ export class BoardManager {
     return true;
   }
 
-  /** هل الطرفين نفس القيمة؟ */
   areEndsSame(): boolean {
     return this._leftPip !== null && this._leftPip === this._rightPip;
   }
 
-  /** فقط طرفان مفتوحان */
   getOpenEnds(): { left: Pip | null; right: Pip | null } {
     return { left: this._leftPip, right: this._rightPip };
   }
