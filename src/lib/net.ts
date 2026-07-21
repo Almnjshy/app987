@@ -1,9 +1,6 @@
 /**
  * اللعب الجماعي عبر WebRTC — يعمل على الشبكة المحلية (Hotspot / نفس الـ Wi-Fi)
  * وعبر الإنترنت دون أي خادم: يتم تبادل رموز الدعوة يدوياً (نسخ/لصق).
- *
- * المضيف يدير محرك اللعبة بشكل موثوق (Host-Authoritative):
- * كل حركة تُتحقق داخل المحرك قبل قبولها — لا يمكن لأي عميل إرسال حركة غير قانونية.
  */
 
 import type { MatchState, ChainTile, Tile, EndSide } from '@/types/game';
@@ -23,10 +20,6 @@ const RTC_CONFIG: RTCConfiguration = {
 };
 
 export const NETWORK_TARGET_SCORE = 100;
-
-/* ------------------------------------------------------------------ */
-/* ترميز رموز الدعوة                                                   */
-/* ------------------------------------------------------------------ */
 
 export function encodeCode(desc: RTCSessionDescriptionInit): string {
   return btoa(unescape(encodeURIComponent(JSON.stringify(desc))));
@@ -49,10 +42,6 @@ function waitIceComplete(pc: RTCPeerConnection, timeoutMs = 2500): Promise<void>
     });
   });
 }
-
-/* ------------------------------------------------------------------ */
-/* أنواع الرسائل                                                       */
-/* ------------------------------------------------------------------ */
 
 export type ClientAction =
   | { type: 'join'; name: string }
@@ -91,10 +80,6 @@ export interface NetSnapshot {
   targetScore: number;
 }
 
-/* ------------------------------------------------------------------ */
-/* جلسة المضيف                                                         */
-/* ------------------------------------------------------------------ */
-
 interface GuestSlot {
   pc: RTCPeerConnection;
   dc: RTCDataChannel | null;
@@ -113,7 +98,7 @@ export class HostSession {
   started = false;
 
   onLobby?: (players: { name: string; isHost: boolean }[]) => void;
-  onSnapshot?: (snap: NetSnapshot) => void; // لقطة المضيف نفسه
+  onSnapshot?: (snap: NetSnapshot) => void;
   onChat?: (from: string, text: string) => void;
   onPlayerLeft?: (name: string) => void;
 
@@ -134,7 +119,6 @@ export class HostSession {
     this.broadcast({ type: 'lobby', players });
   }
 
-  /** إنشاء رمز دعوة للاعب جديد (يكرر لكل ضيف حتى 3). */
   async createInvite(): Promise<string> {
     const pc = new RTCPeerConnection(RTC_CONFIG);
     const slot: GuestSlot = { pc, dc: null, name: `لاعب ${this.guests.length + 2}`, connected: false };
@@ -148,7 +132,6 @@ export class HostSession {
     return encodeCode(pc.localDescription!);
   }
 
-  /** قبول رمز الإجابة من الضيف. */
   async acceptAnswer(slotIndex: number, answerCode: string): Promise<void> {
     const slot = this.guests[slotIndex];
     if (!slot) throw new Error('لا يوجد ضيف بهذا الرقم');
@@ -175,7 +158,6 @@ export class HostSession {
     if (!slot.connected) return;
     slot.connected = false;
     this.onPlayerLeft?.(slot.name);
-    // اللاعب المنقطع يبقى في المباراة ويلعب عنه المحرك تلقائياً
     this.emitLobby();
     this.broadcastAll();
   }
@@ -210,7 +192,7 @@ export class HostSession {
         this.match = applyMove(this.match, idx, { tileId: action.tileId, side: action.side });
         this.message = '';
       } else if (action.type === 'draw') {
-        this.match = applyDraw(this.match, idx).state;
+        this.match = applyDraw(this.match, idx);
       } else if (action.type === 'pass') {
         this.match = applyPass(this.match, idx);
       }
@@ -220,7 +202,6 @@ export class HostSession {
     }
   }
 
-  /** بدء المباراة (المضيف فقط). */
   startGame() {
     const activeGuests = this.guests.filter((g) => g.connected);
     const playerCount = 1 + activeGuests.length;
@@ -235,14 +216,13 @@ export class HostSession {
     this.broadcastAll();
   }
 
-  /** إجراء المضيف نفسه (اللاعب رقم 0). */
   hostAction(action: { type: 'play'; tileId: string; side: EndSide } | { type: 'draw' } | { type: 'pass' }) {
     if (!this.match) return;
     try {
       if (action.type === 'play') {
         this.match = applyMove(this.match, 0, { tileId: action.tileId, side: action.side });
       } else if (action.type === 'draw') {
-        this.match = applyDraw(this.match, 0).state;
+        this.match = applyDraw(this.match, 0);
       } else {
         this.match = applyPass(this.match, 0);
       }
@@ -286,7 +266,7 @@ export class HostSession {
     const names = this.names();
     return {
       youIndex: playerIndex,
-      yourHand: [...m.hands[playerIndex]], // نسخ لحل readonly
+      yourHand: [...m.hands[playerIndex]],
       players: names.map((name, i) => ({
         name,
         isYou: i === playerIndex,
@@ -295,7 +275,7 @@ export class HostSession {
         score: this.scores[i] || 0,
         connected: i === 0 ? true : (this.guests[i - 1]?.connected ?? false),
       })),
-      chain: [...m.chain], // نسخ لحل readonly
+      chain: [...m.chain],
       boneyardCount: m.boneyard.length,
       currentPlayer: m.currentPlayer,
       message: this.message,
@@ -320,27 +300,24 @@ export class HostSession {
       this.emitLobby();
       return;
     }
-    // لقطة مخصصة لكل لاعب (يده فقط مكشوفة له)
     this.guests.forEach((g, i) => {
       if (g.connected) this.send(g, { type: 'snapshot', snap: this.snapshotFor(i + 1) });
     });
     this.onSnapshot?.(this.snapshotFor(0));
   }
 
-  /** هل يستطيع لاعب منقطع أن يُدار آلياً؟ — تُستخدم من واجهة المضيف. */
   autoPlayDisconnected() {
     if (!this.match || this.matchWinnerIndex !== null) return;
     const idx = this.match.currentPlayer;
     if (idx === 0) return;
     const slot = this.guests[idx - 1];
     if (slot?.connected) return;
-    // المحرك يلعب بدلاً عنه بأول حركة قانونية
     const moves = legalMoves(this.match.hands[idx], this.match.chain);
     try {
       if (moves.length > 0) {
-        this.match = applyMove(this.match, idx, moves[0]);
+        this.match = applyMove(this.match, idx, { tileId: moves[0].tile.id, side: moves[0].sides[0] });
       } else if (canDraw(this.match, idx)) {
-        this.match = applyDraw(this.match, idx).state;
+        this.match = applyDraw(this.match, idx);
       } else if (canPass(this.match, idx)) {
         this.match = applyPass(this.match, idx);
       }
@@ -358,10 +335,6 @@ export class HostSession {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* جلسة الضيف                                                          */
-/* ------------------------------------------------------------------ */
-
 export class GuestSession {
   pc: RTCPeerConnection | null = null;
   dc: RTCDataChannel | null = null;
@@ -377,7 +350,6 @@ export class GuestSession {
     this.name = name;
   }
 
-  /** إنشاء رمز إجابة من رمز الدعوة. */
   async join(inviteCode: string): Promise<string> {
     const pc = new RTCPeerConnection(RTC_CONFIG);
     this.pc = pc;
@@ -401,7 +373,6 @@ export class GuestSession {
     await waitIceComplete(pc);
     const answerCode = encodeCode(pc.localDescription!);
 
-    // ننتظر فتح القناة في الخلفية
     channelReady.catch(() => this.onError?.('فشل الاتصال بالمضيف'));
     return answerCode;
   }
