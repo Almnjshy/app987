@@ -2,10 +2,10 @@
  * Domino Master v5.0 — Library Exports
  */
 
-// تصدير BoardManager (لا يوجد تضارب)
+// تصدير BoardManager
 export { BoardManager } from './board';
 
-// تصدير من tile.ts (الدوال الأساسية)
+// تصدير من tile.ts
 export {
   MAX_PIPS,
   TOTAL_TILES,
@@ -25,17 +25,20 @@ export {
   getValidEnds,
 } from './tile';
 
-// تصدير من gameengine.ts (بدون ما تم تصديره من tile.ts لتجنب التضارب)
-export {
-  // الأنواع
+// تصدير الأنواع فقط (export type) لـ isolatedModules
+export type {
   GameConfig,
   DEFAULT_CONFIG,
   Move,
   PlayerState,
-  GameState as EngineGameState,
-  // المحرك
+} from './gameengine';
+
+// تصدير الأنواع مع أسماء مستعارة
+export type { GameState as EngineGameState } from './gameengine';
+
+// تصدير المحرك والدوال
+export {
   DominoGameEngine,
-  // الدوال القديمة للتوافق
   createRound,
   getValidSides,
   canPlayTile,
@@ -46,16 +49,13 @@ export {
   applyDraw,
   applyPass,
   roundStatus,
-  // الذكاء الاصطناعي
   AIMove,
   DominoAI,
-  // التخطيط
   LayoutConfig,
   DEFAULT_LAYOUT,
   LayoutNode,
   calculateSnakeLayout,
   toBoardPositions,
-  // الاختبارات
   runAllTests,
 } from './gameengine';
 
