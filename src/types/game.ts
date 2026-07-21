@@ -226,6 +226,95 @@ export type HostMessage =
 // ============================================
 // ERROR TYPES (from local)
 // ============================================
+
+// ============================================
+// COMPATIBILITY TYPES (from original repo)
+// ============================================
+
+/** Alias for backward compatibility */
+export type Tile = DominoTile;
+
+/** Alias for backward compatibility */
+export type EndSide = BoardEnd;
+
+/** Chain tile (from original repo) */
+export interface ChainTile {
+  readonly tile: DominoTile;
+  readonly left: Pip;
+  readonly right: Pip;
+  readonly orientation: 'normal' | 'flipped';
+}
+
+/** Match state (from original repo) */
+export interface MatchState {
+  readonly hands: readonly (readonly DominoTile[])[];
+  readonly chain: readonly ChainTile[];
+  readonly boneyard: readonly DominoTile[];
+  readonly currentPlayer: number;
+  readonly playerCount: number;
+  readonly variant: 'draw' | 'block';
+  readonly scores: readonly number[];
+}
+
+// ============================================
+// LEVEL CONFIG (from original repo)
+// ============================================
+
+export type Difficulty = 'veryEasy' | 'easy' | 'medium' | 'hard' | 'veryHard' | 'expert' | 'champion';
+export type AILevel = 'easy' | 'medium' | 'hard';
+
+export interface LevelConfig {
+  level: number;
+  name: string;
+  nameAr: string;
+  targetScore: number;
+  aiCount: number;
+  aiDifficulty: Difficulty;
+  description: string;
+  descriptionAr: string;
+}
+
+export const LEVELS: LevelConfig[] = [
+  { level: 1, name: 'First Steps', nameAr: 'الخطوات الأولى', targetScore: 50, aiCount: 1, aiDifficulty: 'veryEasy', description: 'Learn the basics', descriptionAr: 'تعلم الأساسيات' },
+  { level: 2, name: 'Apprentice', nameAr: 'المبتدئ', targetScore: 60, aiCount: 1, aiDifficulty: 'easy', description: 'Standard play', descriptionAr: 'لعب قياسي' },
+  { level: 3, name: 'Rising Star', nameAr: 'النجم الصاعد', targetScore: 70, aiCount: 1, aiDifficulty: 'medium', description: 'Faster AI', descriptionAr: 'ذكاء أسرع' },
+  { level: 4, name: 'Challenger', nameAr: 'المتحدي', targetScore: 80, aiCount: 2, aiDifficulty: 'medium', description: '2 AI opponents', descriptionAr: 'خصمان' },
+  { level: 5, name: 'Expert', nameAr: 'الخبير', targetScore: 100, aiCount: 2, aiDifficulty: 'hard', description: 'Tough opponents', descriptionAr: 'خصوم أقوياء' },
+  { level: 6, name: 'Master', nameAr: 'المعلم', targetScore: 120, aiCount: 2, aiDifficulty: 'hard', description: 'Strategic play', descriptionAr: 'لعب استراتيجي' },
+  { level: 7, name: 'Grandmaster', nameAr: 'الأستاذ الكبير', targetScore: 140, aiCount: 3, aiDifficulty: 'veryHard', description: '3 AI opponents', descriptionAr: '3 خصوم' },
+  { level: 8, name: 'Legend', nameAr: 'الأسطورة', targetScore: 160, aiCount: 3, aiDifficulty: 'veryHard', description: 'Elite AI', descriptionAr: 'ذكاء النخبة' },
+  { level: 9, name: 'Immortal', nameAr: 'الخلود', targetScore: 180, aiCount: 3, aiDifficulty: 'expert', description: 'Near perfect', descriptionAr: 'قرب الكمال' },
+  { level: 10, name: 'Champion', nameAr: 'البطل', targetScore: 200, aiCount: 3, aiDifficulty: 'champion', description: 'Ultimate challenge', descriptionAr: 'التحدي الأقصى' },
+];
+
+export const DIFFICULTY_SETTINGS: Record<string, { aiLevel: AILevel; thinkTimeMin: number; thinkTimeMax: number }> = {
+  veryEasy: { aiLevel: 'easy', thinkTimeMin: 500, thinkTimeMax: 1500 },
+  easy: { aiLevel: 'easy', thinkTimeMin: 800, thinkTimeMax: 2000 },
+  medium: { aiLevel: 'medium', thinkTimeMin: 1000, thinkTimeMax: 2500 },
+  hard: { aiLevel: 'hard', thinkTimeMin: 1200, thinkTimeMax: 3000 },
+  veryHard: { aiLevel: 'hard', thinkTimeMin: 1500, thinkTimeMax: 3500 },
+  expert: { aiLevel: 'hard', thinkTimeMin: 1800, thinkTimeMax: 4000 },
+  champion: { aiLevel: 'hard', thinkTimeMin: 2000, thinkTimeMax: 4500 },
+};
+
+export const AI_NAMES = ['كريم', 'سامي', 'عمر', 'خالد', 'طارق', 'ياسر', 'هشام', 'فادي'];
+
+// ============================================
+// PLAYER COMPATIBILITY (from original repo)
+// ============================================
+
+export interface PlayerView {
+  readonly id: string;
+  readonly name: string;
+  readonly avatar: string;
+  readonly isHuman: boolean;
+  readonly tiles: readonly DominoTile[];
+  readonly score: number;
+  readonly isActive: boolean;
+  readonly tileCount: number;
+}
+
+
 export class DominoError extends Error {
   constructor(message: string, public readonly code: string) {
     super(message);
