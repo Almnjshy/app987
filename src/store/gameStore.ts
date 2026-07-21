@@ -75,7 +75,7 @@ interface GameStore {
   undoMove: () => void;
   resetMatch: () => void;
 
-  completeLevel: (stars: number) => void;
+  completeLevel: (stars: number, level: number, score: number) => void;
   addLoss: () => void;
   usePowerUp: (type: string) => void;
 }
@@ -194,12 +194,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
-  completeLevel: (stars) => {
+  completeLevel: (stars, level, score) => {
     set((state) => {
       const newProgress = { ...state.progress };
-      newProgress.levelStars = { ...newProgress.levelStars, [state.currentLevel]: stars };
-      newProgress.unlockedLevel = Math.max(newProgress.unlockedLevel, state.currentLevel + 1);
+      newProgress.levelStars = { ...newProgress.levelStars, [level || state.currentLevel]: stars };
+      newProgress.unlockedLevel = Math.max(newProgress.unlockedLevel, (level || state.currentLevel) + 1);
       newProgress.totalWins++;
+      newProgress.totalScore += score || 0;
+      newProgress.highestScore = Math.max(newProgress.highestScore, score || 0);
       return { progress: newProgress, hasSavedGame: true };
     });
   },
