@@ -1,11 +1,11 @@
 import { memo, useMemo, useRef, useState, useEffect } from 'react';
-import type { ChainTile, EndSide } from '@/types/game';
+import type { DominoTile as Tile, BoardEnd as EndSide } from '@/types/game';
 import { calculateSnakeLayout, toBoardPositions } from '@/lib/layout';
 import { orientFirstTile } from '@/lib/tile';
 import { DominoTile } from './DominoTile';
 
 interface BoardProps {
-  chain: ChainTile[];
+  chain: Tile[];
   className?: string;
   highlightEnds?: EndSide[];
   onSelectSide?: (side: EndSide) => void;
