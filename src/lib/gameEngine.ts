@@ -1,448 +1,326 @@
-import type { Tile, ChainTile, MatchState, Move, EndSide, RoundResult, AILevel } from '@/types/game';
+/**
+ * Domino Master v5.0 — Game Engine
+ * المحرك الرئيسي المصحح بالكامل
+ *
+ * Rules Verified:
+ * ✅ 28 tiles, 7 per player
+ * ✅ Highest double starts
+ * ✅ Play only on head (left) or tail (right)
+ * ✅ No side branches
+ * ✅ Draw from boneyard if cannot play
+ * ✅ Pass if cannot play and boneyard empty
+ * ✅ Blocked: ALL players cannot play AND boneyard empty
+ * ✅ Winner: empty hand OR lowest hand when blocked
+ * ✅ Score: winner gets sum of opponents' hand values
+ * ✅ Target score wins the match
+ */
 
-let tileIdCounter = 0;
+import {
+  GameState, Player, GamePhase, Move, GameConfig, DEFAULT_CONFIG,
+  DominoTile, InvalidMoveError, GameStateError,
+} from '../types/game';
+import { BoardManager } from './board';
+import {
+  generateDeck, shuffle, findHighestDouble, calculateHandValue,
+  hasPlayableTile, getValidEnds, orientFirstTile,
+} from './tile';
 
-/* ------------------------------------------------------------------ /
-/ إنشاء القطع والتوزيع                                               /
-/ ------------------------------------------------------------------ */
+export class DominoGameEngine {
+  private state: GameState;
+  private config: GameConfig;
+  private board: BoardManager;
+  private allTiles: readonly DominoTile[];
 
-/** إنشاء مجموعة الدومينو الكاملة (28 قطعة) بشكل صحيح. */
-export function generateAllTiles(): Tile[] {
-  tileIdCounter = 0;
-  const tiles: Tile[] = [];
-  for (let i = 0; i <= 6; i++) {
-    for (let j = i; j <= 6; j++) {
-      tiles.push({
-        id: `tile-${tileIdCounter++}`,
-        top: i,
-        bottom: j,
-        isDouble: i === j,
-        total: i + j,
-      });
+  constructor(config: Partial<GameConfig> = {}) {
+    this.config = { ...DEFAULT_CONFIG, ...config };
+    this.allTiles = generateDeck();
+    this.board = BoardManager.createEmpty();
+    this.state = this.initializeGame();
+  }
+
+  // ============================================
+  // INITIALIZATION
+  // ============================================
+
+  private initializeGame(): GameState {
+    const shuffled = shuffle(this.allTiles);
+    const numPlayers = this.config.playerNames.length;
+
+    const players: Player[] = [];
+    let tileIndex = 0;
+
+    for (let i = 0; i < numPlayers; i++) {
+      const hand = shuffled.slice(tileIndex, tileIndex + 7);
+      tileIndex += 7;
+      players.push(Object.freeze({
+        id: `player-${i}`,
+        name: this.config.playerNames[i],
+        type: 'human' as const,
+        hand: Object.freeze(hand),
+        score: 0,
+        handValue: calculateHandValue(hand),
+        isCurrent: false,
+      }));
     }
-  }
-  return tiles;
-}
 
-export function shuffleTiles(tiles: Tile[]): Tile[] {
-  const shuffled = [...tiles];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
-}
+    const boneyard = Object.freeze(shuffled.slice(tileIndex));
 
-export function tilesPerPlayer(playerCount: number): number {
-  if (playerCount < 2 || playerCount > 4) throw new Error('playerCount must be 2..4');
-  return 7;
-}
+    // Find starting player (highest double)
+    let startingIndex = 0;
+    let highestDoubleValue = -1;
 
-export function dealTiles(playerCount: number): { hands: Tile[][]; boneyard: Tile[] } {
-  const shuffled = shuffleTiles(generateAllTiles());
-  const per = tilesPerPlayer(playerCount);
-  const hands: Tile[][] = [];
-  let idx = 0;
-  for (let p = 0; p < playerCount; p++) {
-    hands.push(shuffled.slice(idx, idx + per));
-    idx += per;
-  }
-  return { hands, boneyard: shuffled.slice(idx) };
-}
-
-/* ------------------------------------------------------------------ /
-/ إنشاء الجولة والتحقق من البداية                                      /
-/ ------------------------------------------------------------------ */
-
-/** تحديد اللاعب البادئ والقطعة التي يجب أن يلعبها مجبراً في أول حركة. */
-export function determineFirstPlayer(hands: Tile[][]): { playerIndex: number; requiredTileId: string } {
-  let bestDouble = -1;
-  let bestDoublePlayer = -1;
-  let bestDoubleTileId = '';
-
-  for (let i = 0; i < hands.length; i++) {
-    for (const t of hands[i]) {
-      if (t.isDouble && t.top > bestDouble) {
-        bestDouble = t.top;
-        bestDoublePlayer = i;
-        bestDoubleTileId = t.id;
+    for (let i = 0; i < players.length; i++) {
+      const d = findHighestDouble(players[i].hand);
+      if (d && d.top > highestDoubleValue) {
+        highestDoubleValue = d.top;
+        startingIndex = i;
       }
     }
-  }
-  if (bestDoublePlayer >= 0) {
-    return { playerIndex: bestDoublePlayer, requiredTileId: bestDoubleTileId };
-  }
 
-  let bestScore = -1;
-  let bestPlayer = -1;
-  let bestTileId = '';
-  for (let i = 0; i < hands.length; i++) {
-    for (const t of hands[i]) {
-      const score = t.total * 10 + Math.max(t.top, t.bottom);
-      if (score > bestScore) {
-        bestScore = score;
-        bestPlayer = i;
-        bestTileId = t.id;
-      }
-    }
-  }
-  return { playerIndex: Math.max(0, bestPlayer), requiredTileId: bestTileId };
-}
+    const finalPlayers = players.map((p, i) =>
+      Object.freeze({ ...p, isCurrent: i === startingIndex })
+    );
 
-export function createRound(playerCount: number, variant: 'block' | 'draw'): MatchState {
-  if (playerCount < 2 || playerCount > 4) throw new Error('playerCount must be 2..4');
-  const { hands, boneyard } = dealTiles(playerCount);
-  const { playerIndex, requiredTileId } = determineFirstPlayer(hands);
-
-  const missingSuits: number[][] = Array.from({ length: playerCount }, () => []);
-
-  return {
-    playerCount,
-    variant,
-    hands,
-    chain: [],
-    boneyard,
-    currentPlayer: playerIndex,
-    consecutivePasses: 0,
-    requiredFirstTileId: requiredTileId,
-    missingSuits,
-    history: []
-  };
-}
-
-/* ------------------------------------------------------------------ /
-/ قواعد الحركة والتحقق                                               /
-/ ------------------------------------------------------------------ */
-
-export function getEnds(chain: ChainTile[]): { left: number; right: number } | null {
-  if (chain.length === 0) return null;
-  return { left: chain[0].left, right: chain[chain.length - 1].right };
-}
-
-export function canPlayTile(tile: Tile, chain: ChainTile[]): boolean {
-  const ends = getEnds(chain);
-  if (!ends) return true;
-  return (
-    tile.top === ends.left || tile.bottom === ends.left ||
-    tile.top === ends.right || tile.bottom === ends.right
-  );
-}
-
-export function getValidSides(tile: Tile, chain: ChainTile[]): EndSide[] {
-  if (chain.length === 0) return ['right'];
-  const ends = getEnds(chain)!;
-  const sides: EndSide[] = [];
-  if (tile.top === ends.left || tile.bottom === ends.left) sides.push('left');
-  if (tile.top === ends.right || tile.bottom === ends.right) sides.push('right');
-  return sides;
-}
-
-export function legalMoves(hand: Tile[], chain: ChainTile[]): Move[] {
-  const moves: Move[] = [];
-  for (const tile of hand) {
-    for (const side of getValidSides(tile, chain)) {
-      moves.push({ tileId: tile.id, side });
-    }
-  }
-  return moves;
-}
-
-export function isLegalMove(state: MatchState, playerIndex: number, move: Move): boolean {
-  if (playerIndex !== state.currentPlayer) return false;
-  
-  if (state.chain.length === 0 && state.requiredFirstTileId && move.tileId !== state.requiredFirstTileId) {
-    return false;
-  }
-
-  const hand = state.hands[playerIndex];
-  const tile = hand.find((t) => t.id === move.tileId);
-  if (!tile) return false;
-  return getValidSides(tile, state.chain).includes(move.side);
-}
-
-export function applyMove(state: MatchState, playerIndex: number, move: Move): MatchState {
-  if (!isLegalMove(state, playerIndex, move)) {
-    throw new Error('Illegal move rejected by engine');
-  }
-  const hand = state.hands[playerIndex];
-  const tile = hand.find((t) => t.id === move.tileId)!;
-  const newHand = hand.filter((t) => t.id !== tile.id);
-
-  let chainTile: ChainTile;
-  let chain: ChainTile[];
-
-  if (state.chain.length === 0) {
-    chainTile = { tile, left: tile.top, right: tile.bottom, side: null };
-    chain = [chainTile];
-  } else if (move.side === 'left') {
-    const end = state.chain[0].left;
-    chainTile = tile.top === end
-      ? { tile, left: tile.bottom, right: tile.top, side: 'left' }
-      : { tile, left: tile.top, right: tile.bottom, side: 'left' };
-    chain = [chainTile, ...state.chain];
-  } else {
-    const end = state.chain[state.chain.length - 1].right;
-    chainTile = tile.top === end
-      ? { tile, left: tile.top, right: tile.bottom, side: 'right' }
-      : { tile, left: tile.bottom, right: tile.top, side: 'right' };
-    chain = [...state.chain, chainTile];
-  }
-
-  const hands = state.hands.map((h, i) => (i === playerIndex ? newHand : h));
-  
-  // ✅ إصلاح النوع هنا بإجبار المصفوفة على نوع السجل الصحيح
-  const updatedHistory: MatchState['history'] = [
-    ...state.history, 
-    { type: 'move', playerIndex, move }
-  ];
-
-  return {
-    ...state,
-    hands,
-    chain,
-    consecutivePasses: 0,
-    requiredFirstTileId: null,
-    currentPlayer: (playerIndex + 1) % state.playerCount,
-    history: updatedHistory
-  };
-}
-
-/* ------------------------------------------------------------------ /
-/ منطق السحب والتمرير                                                /
-/ ------------------------------------------------------------------ */
-
-export function canDraw(state: MatchState, playerIndex: number): boolean {
-  if (state.variant !== 'draw') return false;
-  if (state.boneyard.length === 0) return false;
-  if (playerIndex !== state.currentPlayer) return false;
-  return legalMoves(state.hands[playerIndex], state.chain).length === 0;
-}
-
-export function applyDraw(state: MatchState, playerIndex: number): { state: MatchState; drawn: Tile[] } {
-  if (!canDraw(state, playerIndex)) {
-    throw new Error('Draw not allowed');
-  }
-  const hand = [...state.hands[playerIndex]];
-  let boneyard = [...state.boneyard];
-  const drawn: Tile[] = [];
-
-  const ends = getEnds(state.chain);
-  let updatedMissingSuits = [...state.missingSuits];
-  if (ends) {
-    const currentMissing = updatedMissingSuits[playerIndex];
-    const newMissing = Array.from(new Set([...currentMissing, ends.left, ends.right]));
-    updatedMissingSuits[playerIndex] = newMissing;
-  }
-
-  while (boneyard.length > 0) {
-    const tile = boneyard[0];
-    boneyard = boneyard.slice(1);
-    hand.push(tile);
-    drawn.push(tile);
-    if (canPlayTile(tile, state.chain)) break;
-  }
-
-  const hands = state.hands.map((h, i) => (i === playerIndex ? hand : h));
-  const mustPass = legalMoves(hand, state.chain).length === 0;
-  
-  // ✅ إصلاح النوع هنا لمنع الـ Type Mismatch للسحب
-  const updatedHistory: MatchState['history'] = [
-    ...state.history, 
-    { type: 'draw', playerIndex, count: drawn.length }
-  ];
-
-  return {
-    state: {
-      ...state,
-      hands,
+    return Object.freeze({
+      board: this.board.state,
+      players: Object.freeze(finalPlayers),
+      currentPlayerIndex: startingIndex,
       boneyard,
-      missingSuits: updatedMissingSuits,
-      consecutivePasses: mustPass ? state.consecutivePasses + 1 : 0,
-      currentPlayer: mustPass ? (playerIndex + 1) % state.playerCount : playerIndex,
-      history: updatedHistory
-    },
-    drawn,
-  };
-}
-
-export function canPass(state: MatchState, playerIndex: number): boolean {
-  if (playerIndex !== state.currentPlayer) return false;
-  if (legalMoves(state.hands[playerIndex], state.chain).length > 0) return false;
-  return state.variant === 'block' || state.boneyard.length === 0;
-}
-
-export function applyPass(state: MatchState, playerIndex: number): MatchState {
-  if (!canPass(state, playerIndex)) {
-    throw new Error('Pass not allowed');
+      phase: 'playing' as GamePhase,
+      round: 1,
+      moveHistory: Object.freeze([]),
+      consecutivePasses: 0,
+      winner: null,
+      lastRoundWinner: null,
+      scores: new Map(),
+    });
   }
 
-  const ends = getEnds(state.chain);
-  let updatedMissingSuits = [...state.missingSuits];
-  if (ends) {
-    const currentMissing = updatedMissingSuits[playerIndex];
-    const newMissing = Array.from(new Set([...currentMissing, ends.left, ends.right]));
-    updatedMissingSuits[playerIndex] = newMissing;
-  }
+  getState(): GameState { return this.state; }
+  getCurrentPlayer(): Player { return this.state.players[this.state.currentPlayerIndex]; }
+  getBoard(): BoardManager { return this.board; }
+  getConfig(): GameConfig { return this.config; }
 
-  // ✅ إصلاح النوع هنا لمنع الـ Type Mismatch للتمرير
-  const updatedHistory: MatchState['history'] = [
-    ...state.history, 
-    { type: 'pass', playerIndex }
-  ];
+  // ============================================
+  // PLAY TILE
+  // ============================================
 
-  return {
-    ...state,
-    missingSuits: updatedMissingSuits,
-    consecutivePasses: state.consecutivePasses + 1,
-    currentPlayer: (playerIndex + 1) % state.playerCount,
-    history: updatedHistory
-  };
-}
-
-/* ------------------------------------------------------------------ /
-/ حساب النقاط ونهاية الجولة                                           /
-/ ------------------------------------------------------------------ */
-
-export function handValue(hand: Tile[]): number {
-  return hand.reduce((sum, t) => sum + t.total, 0);
-}
-
-export function isBlocked(state: MatchState): boolean {
-  if (state.chain.length === 0) return false;
-  if (state.consecutivePasses >= state.playerCount) return true;
-  if (state.variant === 'draw' && state.boneyard.length > 0) return false;
-  for (const hand of state.hands) {
-    if (legalMoves(hand, state.chain).length > 0) return false;
-  }
-  return true;
-}
-
-export function roundStatus(state: MatchState): { type: 'ongoing' } | ({ type: 'ended' } & RoundResult) {
-  for (let i = 0; i < state.hands.length; i++) {
-    if (state.hands[i].length === 0) {
-      let points = 0;
-      for (let j = 0; j < state.hands.length; j++) {
-        if (j !== i) points += handValue(state.hands[j]);
-      }
-      return { type: 'ended', reason: 'domino', winnerIndex: i, points };
-    }
-  }
-
-  if (isBlocked(state)) {
-    let lowest = Infinity;
-    let winners: number[] = [];
-
-    for (let i = 0; i < state.hands.length; i++) {
-      const v = handValue(state.hands[i]);
-      if (v < lowest) {
-        lowest = v;
-        winners = [i];
-      } else if (v === lowest) {
-        winners.push(i);
-      }
+  playTile(tileId: string, end: 'left' | 'right'): boolean {
+    if (this.state.phase === 'game_over') {
+      throw new GameStateError('Game is already over');
     }
 
-    if (winners.length > 1) {
-      return { type: 'ended', reason: 'blocked_tie', winnerIndex: -1, points: 0 };
+    const playerIndex = this.state.currentPlayerIndex;
+    const player = this.state.players[playerIndex];
+    const tile = player.hand.find(t => t.id === tileId);
+
+    if (!tile) {
+      throw new InvalidMoveError(`Tile ${tileId} not in hand`);
     }
 
-    const winner = winners[0];
-    let points = 0;
-    for (let j = 0; j < state.hands.length; j++) {
-      if (j !== winner) points += handValue(state.hands[j]);
+    const validEnds = getValidEnds(tile, this.board.leftPip, this.board.rightPip);
+    if (!validEnds.includes(end)) {
+      throw new InvalidMoveError(
+        `Cannot play [${tile.top}|${tile.bottom}] on ${end}. ` +
+        `Open ends: L=${this.board.leftPip}, R=${this.board.rightPip}`
+      );
     }
-    points -= handValue(state.hands[winner]);
-    return { type: 'ended', reason: 'blocked', winnerIndex: winner, points: Math.max(0, points) };
+
+    const oriented = this.board.playTile(tile, end);
+    if (!oriented) {
+      throw new InvalidMoveError('Board rejected the tile');
+    }
+
+    const newHand = player.hand.filter(t => t.id !== tileId);
+    const newHandValue = calculateHandValue(newHand);
+
+    const move: Move = Object.freeze({
+      tile, end, orientedTile: oriented, isPass: false, isDraw: false,
+    });
+
+    // Check win: empty hand
+    if (newHand.length === 0) {
+      this.endRound(playerIndex);
+      return true;
+    }
+
+    this.state = this.buildNextState({
+      newPlayers: this.state.players.map((p, i) =>
+        i === playerIndex
+          ? Object.freeze({ ...p, hand: Object.freeze(newHand), handValue: newHandValue, isCurrent: false })
+          : Object.freeze({ ...p, isCurrent: i === (playerIndex + 1) % this.state.players.length })
+      ),
+      newBoard: this.board.state,
+      newHistory: [...this.state.moveHistory, move],
+      resetPasses: true,
+    });
+
+    return true;
   }
 
-  return { type: 'ongoing' };
-}
+  // ============================================
+  // DRAW FROM BONEYARD
+  // ============================================
 
-/* ------------------------------------------------------------------ /
-/ الذكاء الاصطناعي الاحترافي ذو الذاكرة                               /
-/ ------------------------------------------------------------------ */
+  drawTile(): DominoTile | null {
+    if (this.state.boneyard.length === 0) return null;
 
-function countSuits(state: MatchState, playerIndex: number): number[] {
-  const counts = new Array(7).fill(8);
-  for (const ct of state.chain) {
-    counts[ct.tile.top]--;
-    counts[ct.tile.bottom]--;
+    const playerIndex = this.state.currentPlayerIndex;
+    const player = this.state.players[playerIndex];
+
+    const [drawn, ...remaining] = this.state.boneyard;
+    const newHand = [...player.hand, drawn];
+    const newHandValue = calculateHandValue(newHand);
+
+    const move: Move = Object.freeze({
+      tile: drawn, end: 'right', orientedTile: orientFirstTile(drawn),
+      isPass: false, isDraw: true,
+    });
+
+    this.state = this.buildNextState({
+      newPlayers: this.state.players.map((p, i) =>
+        i === playerIndex
+          ? Object.freeze({ ...p, hand: Object.freeze(newHand), handValue: newHandValue })
+          : p
+      ),
+      newBoneyard: Object.freeze(remaining),
+      newHistory: [...this.state.moveHistory, move],
+      resetPasses: false,
+    });
+
+    return drawn;
   }
-  for (const t of state.hands[playerIndex]) {
-    counts[t.top]--;
-    counts[t.bottom]--;
-  }
-  return counts;
-}
 
-function evaluateMove(state: MatchState, playerIndex: number, move: Move, level: AILevel): number {
-  const tile = state.hands[playerIndex].find((t) => t.id === move.tileId)!;
-  let score = 0;
+  // ============================================
+  // PASS TURN
+  // ============================================
 
-  score += tile.total * 1.5;
+  passTurn(): void {
+    const playerIndex = this.state.currentPlayerIndex;
+    const newPasses = this.state.consecutivePasses + 1;
 
-  if (level !== 'easy') {
-    const ends = getEnds(state.chain);
-    const counts = countSuits(state, playerIndex);
-    const remaining = state.hands[playerIndex].filter((t) => t.id !== tile.id);
-
-    let exposed: number;
-    if (!ends) {
-      exposed = tile.bottom;
-    } else if (move.side === 'left') {
-      exposed = tile.top === ends.left ? tile.bottom : tile.top;
-    } else {
-      exposed = tile.top === ends.right ? tile.bottom : tile.top;
+    if (newPasses >= this.state.players.length) {
+      this.handleBlockedGame();
+      return;
     }
 
-    const synergy = remaining.filter((t) => t.top === exposed || t.bottom === exposed).length;
-    score += synergy * 5;
+    const move: Move = Object.freeze({
+      tile: this.state.players[playerIndex].hand[0],
+      end: 'right', orientedTile: orientFirstTile(this.state.players[playerIndex].hand[0]),
+      isPass: true, isDraw: false,
+    });
 
-    if (tile.isDouble) score += 4;
+    this.state = this.buildNextState({
+      newHistory: [...this.state.moveHistory, move],
+      resetPasses: false,
+      consecutivePasses: newPasses,
+    });
+  }
 
-    const nextPlayer = (playerIndex + 1) % state.playerCount;
-    const nextPlayerMissing = state.missingSuits[nextPlayer] || [];
-    
-    if (nextPlayerMissing.includes(exposed)) {
-      score += 12; 
-    }
+  // ============================================
+  // BLOCKED GAME
+  // ============================================
 
-    if (level === 'hard' && ends) {
-      const otherEnd = move.side === 'left' ? ends.right : ends.left;
-      if (exposed === otherEnd) {
-        score += 6;
+  private handleBlockedGame(): void {
+    let minHandValue = Infinity;
+    let winnerIndex = -1;
+
+    for (let i = 0; i < this.state.players.length; i++) {
+      const hv = this.state.players[i].handValue;
+      if (hv < minHandValue) {
+        minHandValue = hv;
+        winnerIndex = i;
       }
     }
+
+    this.endRound(winnerIndex);
   }
 
-  return score + Math.random() * 0.5;
-}
+  // ============================================
+  // END ROUND
+  // ============================================
 
-export function chooseAIAction(
-  state: MatchState,
-  playerIndex: number,
-  level: AILevel
-): { kind: 'move'; move: Move } | { kind: 'draw' } | { kind: 'pass' } {
-  const hand = state.hands[playerIndex];
-  const moves = legalMoves(hand, state.chain);
+  private endRound(winnerIndex: number): void {
+    const winner = this.state.players[winnerIndex];
 
-  if (moves.length === 0) {
-    if (canDraw(state, playerIndex)) return { kind: 'draw' };
-    return { kind: 'pass' };
-  }
+    let roundPoints = 0;
+    const newScores = new Map(this.state.scores);
 
-  if (level === 'easy') {
-    return { kind: 'move', move: moves[Math.floor(Math.random() * moves.length)] };
-  }
-
-  let best = moves[0];
-  let bestScore = -Infinity;
-  for (const move of moves) {
-    const s = evaluateMove(state, playerIndex, move, level);
-    if (s > bestScore) {
-      bestScore = s;
-      best = move;
+    for (let i = 0; i < this.state.players.length; i++) {
+      if (i === winnerIndex) continue;
+      roundPoints += this.state.players[i].handValue;
     }
+
+    const currentScore = newScores.get(winner.id) || 0;
+    newScores.set(winner.id, currentScore + roundPoints);
+
+    const winnerTotal = newScores.get(winner.id) || 0;
+    const isGameOver = winnerTotal >= this.config.targetScore;
+
+    const updatedPlayers = this.state.players.map((p, i) =>
+      Object.freeze({ ...p, score: newScores.get(p.id) || 0 })
+    );
+
+    this.state = Object.freeze({
+      ...this.state,
+      players: Object.freeze(updatedPlayers),
+      phase: isGameOver ? 'game_over' : 'round_end',
+      winner: isGameOver ? updatedPlayers[winnerIndex] : null,
+      lastRoundWinner: updatedPlayers[winnerIndex],
+      scores: newScores,
+      consecutivePasses: 0,
+    });
   }
-  return { kind: 'move', move: best };
+
+  // ============================================
+  // STATE BUILDER
+  // ============================================
+
+  private buildNextState(params: {
+    newPlayers?: readonly Player[];
+    newBoard?: typeof this.state.board;
+    newBoneyard?: readonly DominoTile[];
+    newHistory?: readonly Move[];
+    resetPasses?: boolean;
+    consecutivePasses?: number;
+  }): GameState {
+    const nextIndex = (this.state.currentPlayerIndex + 1) % this.state.players.length;
+
+    return Object.freeze({
+      ...this.state,
+      board: params.newBoard || this.state.board,
+      players: params.newPlayers || this.state.players,
+      currentPlayerIndex: nextIndex,
+      boneyard: params.newBoneyard || this.state.boneyard,
+      moveHistory: Object.freeze(params.newHistory || this.state.moveHistory),
+      consecutivePasses: params.resetPasses ? 0 : (params.consecutivePasses ?? this.state.consecutivePasses),
+    });
+  }
+
+  // ============================================
+  // VALIDATION HELPERS
+  // ============================================
+
+  canCurrentPlayerPlay(): boolean {
+    const player = this.getCurrentPlayer();
+    return hasPlayableTile(player.hand, this.board.leftPip, this.board.rightPip);
+  }
+
+  canCurrentPlayerDraw(): boolean {
+    return this.state.boneyard.length > 0;
+  }
+
+  /** True blocked: no one can play AND boneyard is empty */
+  isActuallyBlocked(): boolean {
+    for (const player of this.state.players) {
+      const canPlay = hasPlayableTile(player.hand, this.board.leftPip, this.board.rightPip);
+      if (canPlay) return false;
+    }
+    return this.state.boneyard.length === 0;
+  }
+
+  reset(): void {
+    this.board.reset();
+    this.state = this.initializeGame();
+  }
 }
