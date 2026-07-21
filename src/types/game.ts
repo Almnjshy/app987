@@ -1,67 +1,135 @@
-export interface Tile {
-  id: string;
-  top: number;
-  bottom: number;
-  isDouble: boolean;
-  total: number;
+/**
+ * Domino Master v5.0 — Merged Types
+ * صارم + كامل — يخدم المحرك والواجهة
+ */
+
+// ============================================
+// CORE PIP & TILE TYPES (from local — strict)
+// ============================================
+export type Pip = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+export interface DominoTile {
+  readonly id: string;
+  readonly top: Pip;
+  readonly bottom: Pip;
+  readonly isDouble: boolean;
+  readonly value: number;
 }
 
-/** قطعة موضوعة على السلسلة مع اتجاهها الحقيقي (left = قيمة الطرف الأيسر). */
-export interface ChainTile {
-  tile: Tile;
-  left: number;
-  right: number;
-  /** الطرف الذي أُضيفت منه (null للقطعة الأولى) */
-  side: 'left' | 'right' | null;
+export interface OrientedTile extends DominoTile {
+  readonly orientation: 'normal' | 'flipped';
+  readonly leadingPip: Pip;
+  readonly trailingPip: Pip;
 }
 
-export type EndSide = 'left' | 'right';
+export type BoardEnd = 'left' | 'right';
 
-export interface Move {
-  tileId: string;
-  side: EndSide;
+// ============================================
+// BOARD STATE (from local — strict)
+// ============================================
+export interface BoardState {
+  readonly tiles: readonly OrientedTile[];
+  readonly leftPip: Pip | null;
+  readonly rightPip: Pip | null;
+  readonly length: number;
+  readonly isEmpty: boolean;
+  readonly hash: string;
 }
 
-export type GameVariant = 'block' | 'draw';
-
-export type AILevel = 'easy' | 'medium' | 'hard';
-
-export interface RoundResult {
-  winnerIndex: number;
-  points: number;
-  reason: 'domino' | 'blocked' | 'blocked_tie'; // معالجة التعادل عند القفل
-}
-
-/** حالة الجولة — قابلة للتسلسل (JSON) للحفظ والمزامنة الشبكية. */
-export interface MatchState {
-  playerCount: number;
-  variant: GameVariant;
-  hands: Tile[][];
-  chain: ChainTile[];
-  boneyard: Tile[];
-  currentPlayer: number;
-  consecutivePasses: number;
-  requiredFirstTileId: string | null; // الرمية الإجبارية الأولى
-  missingSuits: number[][];           // ذاكرة الـ AI
-  history: Array<{                    // سجل الأحداث للتراجع والإعادة
-    type: 'move' | 'draw' | 'pass';
-    playerIndex: number;
-    move?: Move;
-    count?: number;
-  }>;
-}
+// ============================================
+// PLAYER & GAME STATE (merged)
+// ============================================
+export type PlayerType = 'human' | 'ai';
+export type AIDifficulty = 'beginner' | 'intermediate' | 'advanced' | 'expert';
+export type GamePhase = 'setup' | 'playing' | 'blocked' | 'round_end' | 'game_over';
 
 export interface Player {
-  id: string;
-  name: string;
-  avatar: string;
-  isHuman: boolean;
-  tiles: Tile[];
-  score: number;
-  isActive: boolean;
-  tileCount: number;
+  readonly id: string;
+  readonly name: string;
+  readonly type: PlayerType;
+  readonly hand: readonly DominoTile[];
+  readonly score: number;
+  readonly handValue: number;
+  readonly isCurrent: boolean;
 }
 
+export interface Move {
+  readonly tile: DominoTile;
+  readonly end: BoardEnd;
+  readonly orientedTile: OrientedTile;
+  readonly isPass: boolean;
+  readonly isDraw: boolean;
+}
+
+export interface GameState {
+  readonly board: BoardState;
+  readonly players: readonly Player[];
+  readonly currentPlayerIndex: number;
+  readonly boneyard: readonly DominoTile[];
+  readonly phase: GamePhase;
+  readonly round: number;
+  readonly moveHistory: readonly Move[];
+  readonly consecutivePasses: number;
+  readonly winner: Player | null;
+  readonly lastRoundWinner: Player | null;
+  readonly scores: ReadonlyMap<string, number>;
+}
+
+export interface GameConfig {
+  readonly playerNames: readonly string[];
+  readonly targetScore: number;
+  readonly maxRounds: number;
+}
+
+export const DEFAULT_CONFIG: GameConfig = {
+  playerNames: ['Player 1', 'Player 2'],
+  targetScore: 100,
+  maxRounds: 10,
+};
+
+// ============================================
+// LAYOUT TYPES (from local)
+// ============================================
+export interface BoardPosition {
+  readonly x: number;
+  readonly y: number;
+  readonly rotation: number;
+  readonly tile: OrientedTile;
+  readonly index: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface LayoutConfig {
+  readonly viewportWidth: number;
+  readonly viewportHeight: number;
+  readonly tileWidth: number;
+  readonly tileHeight: number;
+  readonly gap: number;
+  readonly maxRowLength: number;
+}
+
+export const DEFAULT_LAYOUT: LayoutConfig = {
+  viewportWidth: 800,
+  viewportHeight: 600,
+  tileWidth: 60,
+  tileHeight: 30,
+  gap: 5,
+  maxRowLength: 8,
+};
+
+// ============================================
+// AI TYPES (from local)
+// ============================================
+export interface AIMove {
+  readonly tile: DominoTile;
+  readonly end: BoardEnd;
+  readonly score: number;
+}
+
+// ============================================
+// UI / STORE TYPES (from repo — preserved)
+// ============================================
 export type ScreenType =
   | 'title'
   | 'menu'
@@ -118,39 +186,61 @@ export interface PowerUp {
 
 export type GameMode = 'ai' | 'network' | 'tournament' | 'online';
 
-export const LEVELS: LevelConfig[] = [
-  { level: 1, name: 'First Steps', nameAr: 'الخطوات الأولى', targetScore: 50, aiCount: 1, aiDifficulty: 'veryEasy', description: 'Learn the basics', descriptionAr: 'تعلم الأساسيات' },
-  { level: 2, name: 'Apprentice', nameAr: 'المبتدئ', targetScore: 60, aiCount: 1, aiDifficulty: 'easy', description: 'Standard play', descriptionAr: 'لعب قياسي' },
-  { level: 3, name: 'Rising Star', nameAr: 'النجم الصاعد', targetScore: 70, aiCount: 2, aiDifficulty: 'easy', description: '3-player game', descriptionAr: 'لعب 3 لاعبين' },
-  { level: 4, name: 'Challenger', nameAr: 'المتحدي', targetScore: 80, aiCount: 2, aiDifficulty: 'medium', description: 'Tougher opponents', descriptionAr: 'خصوم أقوى' },
-  { level: 5, name: 'Semi-Pro', nameAr: 'نصف محترف', targetScore: 100, aiCount: 3, aiDifficulty: 'medium', description: '4-player game', descriptionAr: 'لعب 4 لاعبين' },
-  { level: 6, name: 'Professional', nameAr: 'المحترف', targetScore: 100, aiCount: 3, aiDifficulty: 'hard', description: 'Smarter AI', descriptionAr: 'ذكاء اصطناعي أذكى' },
-  { level: 7, name: 'Expert', nameAr: 'الخبير', targetScore: 150, aiCount: 3, aiDifficulty: 'hard', description: 'Longer match', descriptionAr: 'مباراة أطول' },
-  { level: 8, name: 'Master', nameAr: 'الماستر', targetScore: 150, aiCount: 3, aiDifficulty: 'veryHard', description: 'Elite opponents', descriptionAr: 'خصوم نخبة' },
-  { level: 9, name: 'Grandmaster', nameAr: 'الغراند ماستر', targetScore: 200, aiCount: 3, aiDifficulty: 'expert', description: 'Marathon match', descriptionAr: 'مباراة ماراثونية' },
-  { level: 10, name: 'Domino King', nameAr: 'ملك الدومينو', targetScore: 200, aiCount: 3, aiDifficulty: 'champion', description: 'Ultimate challenge', descriptionAr: 'التحدي الأخير' },
-];
+// ============================================
+// NETWORK TYPES (from repo — preserved)
+// ============================================
+export interface NetPlayerView {
+  name: string;
+  isYou: boolean;
+  isActive: boolean;
+  tileCount: number;
+  score: number;
+  connected: boolean;
+}
 
-export const AI_NAMES = ['أحمد', 'سامي', 'خالد', 'عمر', 'فهد', 'ناصر', 'سعد', 'ماجد'];
-export const AI_NAMES_EN = ['Ahmed', 'Sami', 'Khaled', 'Omar', 'Fahd', 'Nasser', 'Saad', 'Majid'];
+export interface NetSnapshot {
+  chain: any[];
+  currentPlayer: number;
+  youIndex: number;
+  matchWinnerIndex: number | null;
+  players: NetPlayerView[];
+  message: string | null;
+  boneyardCount: number;
+}
 
-/** ربط مستويات الصعوبة بمستويات الذكاء الثلاثة في المحرك */
-export const DIFFICULTY_AI_LEVEL: Record<Difficulty, AILevel> = {
-  veryEasy: 'easy',
-  easy: 'easy',
-  medium: 'medium',
-  hard: 'medium',
-  veryHard: 'hard',
-  expert: 'hard',
-  champion: 'hard',
-};
+export type ClientAction =
+  | { type: 'join'; name: string }
+  | { type: 'play'; tileId: string; side: BoardEnd }
+  | { type: 'draw' }
+  | { type: 'pass' }
+  | { type: 'chat'; text: string }
+  | { type: 'leave' };
 
-export const DIFFICULTY_SETTINGS: Record<Difficulty, { thinkTimeMin: number; thinkTimeMax: number; aiLevel: AILevel }> = {
-  veryEasy: { thinkTimeMin: 900, thinkTimeMax: 1600, aiLevel: 'easy' },
-  easy: { thinkTimeMin: 900, thinkTimeMax: 1600, aiLevel: 'easy' },
-  medium: { thinkTimeMin: 1100, thinkTimeMax: 1900, aiLevel: 'medium' },
-  hard: { thinkTimeMin: 1200, thinkTimeMax: 2100, aiLevel: 'medium' },
-  veryHard: { thinkTimeMin: 1300, thinkTimeMax: 2300, aiLevel: 'hard' },
-  expert: { thinkTimeMin: 1400, thinkTimeMax: 2400, aiLevel: 'hard' },
-  champion: { thinkTimeMin: 1500, thinkTimeMax: 2500, aiLevel: 'hard' },
-};
+export type HostMessage =
+  | { type: 'lobby'; players: { name: string; isHost: boolean }[] }
+  | { type: 'snapshot'; snap: NetSnapshot }
+  | { type: 'chat'; from: string; text: string }
+  | { type: 'error'; message: string }
+  | { type: 'closed' };
+
+// ============================================
+// ERROR TYPES (from local)
+// ============================================
+export class DominoError extends Error {
+  constructor(message: string, public readonly code: string) {
+    super(message);
+    this.name = 'DominoError';
+  }
+}
+
+export class InvalidMoveError extends DominoError {
+  constructor(reason: string) {
+    super(`Invalid move: ${reason}`, 'INVALID_MOVE');
+  }
+}
+
+export class GameStateError extends DominoError {
+  constructor(reason: string) {
+    super(`Game state error: ${reason}`, 'GAME_STATE');
+  }
+}
