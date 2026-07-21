@@ -64,6 +64,12 @@ export interface Player {
   readonly score: number;
   readonly handValue: number;
   readonly isCurrent: boolean;
+  // إضافات للتوافق مع PlayerView والمكونات
+  readonly avatar?: string;
+  readonly isHuman?: boolean;
+  readonly tiles?: readonly DominoTile[];
+  readonly tileCount?: number;
+  readonly isActive?: boolean;
 }
 
 /** Player view for UI (from original repo) */
@@ -322,8 +328,8 @@ export const DIFFICULTY_SETTINGS: Record<string, { aiLevel: AILevel; thinkTimeMi
   medium: { aiLevel: 'medium', thinkTimeMin: 1000, thinkTimeMax: 2500 },
   hard: { aiLevel: 'hard', thinkTimeMin: 1200, thinkTimeMax: 3000 },
   veryHard: { aiLevel: 'hard', thinkTimeMin: 1500, thinkTimeMax: 3500 },
-  expert: { aiLevel: 'hard', thinkTimeMin: 1800, thinkTimeMax: 4000 },
-  champion: { aiLevel: 'hard', thinkTimeMin: 2000, thinkTimeMax: 4500 },
+  expert: { aiLevel: 'hard', thinkTimeMin: 2000, thinkTimeMax: 4000 },
+  champion: { aiLevel: 'hard', thinkTimeMin: 2500, thinkTimeMax: 5000 },
 };
 
-export const AI_NAMES = ['كريم', 'سامي', 'عمر', 'خالد', 'طارق', 'ياسر', 'هشام', 'فادي'];
+export const AI_NAMES = ['آدم', 'بلال', 'سامي', 'وائل', 'زياد', 'رامي', 'هشام', 'فادي'];
