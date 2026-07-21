@@ -38,7 +38,7 @@ export type {
 // تصدير الأنواع مع أسماء مستعارة
 export type { GameState as EngineGameState } from './gameengine';
 
-// تصدير القيم من gameengine.ts فقط (المصدر الوحيد)
+// تصدير القيم من gameengine.ts (دوال، classes، constants)
 export {
   DominoGameEngine,
   createRound,
