@@ -1,1 +1,1 @@
-export * from './gameengine';
+export * from './game';
