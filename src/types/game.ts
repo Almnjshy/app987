@@ -1,6 +1,5 @@
 /**
  * Domino Master v5.0 — Core Types (merged)
- * أنواع مدمجة من الملف المحلي + المستودع الأصلي
  */
 
 // ============================================
@@ -16,7 +15,7 @@ export interface DominoTile {
   readonly value: number;
 }
 
-/** Alias for backward compatibility (from original repo) */
+/** Alias for backward compatibility */
 export type Tile = DominoTile;
 
 export interface OrientedTile extends DominoTile {
@@ -26,8 +25,7 @@ export interface OrientedTile extends DominoTile {
 }
 
 export type BoardEnd = 'left' | 'right';
-
-/** Alias for backward compatibility (from original repo) */
+/** Alias for backward compatibility */
 export type EndSide = BoardEnd;
 
 // ============================================
