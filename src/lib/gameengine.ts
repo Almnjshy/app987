@@ -254,6 +254,269 @@ export class BoardManager {
 }
 
 // ============================================
+// GAME ENGINE (NEW — for GameScreen.tsx + store)
+// ============================================
+export interface GameConfig {
+  readonly playerNames: readonly string[];
+  readonly targetScore: number;
+  readonly maxRounds: number;
+}
+
+export const DEFAULT_CONFIG: GameConfig = {
+  playerNames: ['Player 1', 'Player 2'],
+  targetScore: 100,
+  maxRounds: 10,
+};
+
+export interface Move {
+  readonly tile: DominoTile;
+  readonly end: BoardEnd;
+  readonly orientedTile: OrientedTile;
+  readonly isPass: boolean;
+  readonly isDraw: boolean;
+}
+
+export interface PlayerState {
+  readonly id: string;
+  readonly name: string;
+  readonly type: 'human' | 'ai';
+  readonly hand: readonly DominoTile[];
+  readonly score: number;
+  readonly handValue: number;
+  readonly isCurrent: boolean;
+}
+
+export interface GameState {
+  readonly board: BoardState;
+  readonly players: readonly PlayerState[];
+  readonly currentPlayerIndex: number;
+  readonly boneyard: readonly DominoTile[];
+  readonly phase: 'setup' | 'playing' | 'blocked' | 'round_end' | 'game_over';
+  readonly round: number;
+  readonly moveHistory: readonly Move[];
+  readonly consecutivePasses: number;
+  readonly winner: PlayerState | null;
+  readonly lastRoundWinner: PlayerState | null;
+  readonly scores: ReadonlyMap<string, number>;
+}
+
+export class DominoGameEngine {
+  private state: GameState;
+  private config: GameConfig;
+  private board: BoardManager;
+  private allTiles: readonly DominoTile[];
+
+  constructor(config: Partial<GameConfig> = {}) {
+    this.config = { ...DEFAULT_CONFIG, ...config };
+    this.allTiles = generateDeck();
+    this.board = BoardManager.createEmpty();
+    this.state = this.initializeGame();
+  }
+
+  private initializeGame(): GameState {
+    const shuffled = shuffle(this.allTiles);
+    const numPlayers = this.config.playerNames.length;
+    const players: PlayerState[] = [];
+    let tileIndex = 0;
+
+    for (let i = 0; i < numPlayers; i++) {
+      const hand = shuffled.slice(tileIndex, tileIndex + 7);
+      tileIndex += 7;
+      players.push(Object.freeze({
+        id: `player-${i}`,
+        name: this.config.playerNames[i],
+        type: 'human' as const,
+        hand: Object.freeze(hand),
+        score: 0,
+        handValue: calculateHandValue(hand),
+        isCurrent: false,
+      }));
+    }
+
+    const boneyard = Object.freeze(shuffled.slice(tileIndex));
+    let startingIndex = 0;
+    let highestDoubleValue = -1;
+
+    for (let i = 0; i < players.length; i++) {
+      const d = findHighestDouble(players[i].hand);
+      if (d && d.top > highestDoubleValue) {
+        highestDoubleValue = d.top;
+        startingIndex = i;
+      }
+    }
+
+    const finalPlayers = players.map((p, i) =>
+      Object.freeze({ ...p, isCurrent: i === startingIndex })
+    );
+
+    return Object.freeze({
+      board: this.board.state,
+      players: Object.freeze(finalPlayers),
+      currentPlayerIndex: startingIndex,
+      boneyard,
+      phase: 'playing' as const,
+      round: 1,
+      moveHistory: Object.freeze([]),
+      consecutivePasses: 0,
+      winner: null,
+      lastRoundWinner: null,
+      scores: new Map(),
+    });
+  }
+
+  getState(): GameState { return this.state; }
+  getCurrentPlayer(): PlayerState { return this.state.players[this.state.currentPlayerIndex]; }
+  getBoard(): BoardManager { return this.board; }
+  getConfig(): GameConfig { return this.config; }
+
+  playTile(tileId: string, end: 'left' | 'right'): boolean {
+    if (this.state.phase === 'game_over') throw new Error('Game over');
+    const playerIndex = this.state.currentPlayerIndex;
+    const player = this.state.players[playerIndex];
+    const tile = player.hand.find(t => t.id === tileId);
+    if (!tile) throw new Error('Tile not in hand');
+
+    const validEnds = getValidEnds(tile, this.board.leftPip, this.board.rightPip);
+    if (!validEnds.includes(end)) throw new Error('Invalid end');
+
+    const oriented = this.board.playTile(tile, end);
+    if (!oriented) throw new Error('Board rejected');
+
+    const newHand = player.hand.filter(t => t.id !== tileId);
+    const newHandValue = calculateHandValue(newHand);
+    const move: Move = Object.freeze({ tile, end, orientedTile: oriented, isPass: false, isDraw: false });
+
+    if (newHand.length === 0) {
+      this.endRound(playerIndex);
+      return true;
+    }
+
+    this.state = this.buildNextState({
+      newPlayers: this.state.players.map((p, i) =>
+        i === playerIndex
+          ? Object.freeze({ ...p, hand: Object.freeze(newHand), handValue: newHandValue, isCurrent: false })
+          : Object.freeze({ ...p, isCurrent: i === (playerIndex + 1) % this.state.players.length })
+      ),
+      newBoard: this.board.state,
+      newHistory: [...this.state.moveHistory, move],
+      resetPasses: true,
+    });
+    return true;
+  }
+
+  drawTile(): DominoTile | null {
+    if (this.state.boneyard.length === 0) return null;
+    const playerIndex = this.state.currentPlayerIndex;
+    const player = this.state.players[playerIndex];
+    const [drawn, ...remaining] = this.state.boneyard;
+    const newHand = [...player.hand, drawn];
+    const newHandValue = calculateHandValue(newHand);
+    const move: Move = Object.freeze({ tile: drawn, end: 'right', orientedTile: orientFirstTile(drawn), isPass: false, isDraw: true });
+
+    this.state = this.buildNextState({
+      newPlayers: this.state.players.map((p, i) =>
+        i === playerIndex
+          ? Object.freeze({ ...p, hand: Object.freeze(newHand), handValue: newHandValue })
+          : p
+      ),
+      newBoneyard: Object.freeze(remaining),
+      newHistory: [...this.state.moveHistory, move],
+      resetPasses: false,
+    });
+    return drawn;
+  }
+
+  passTurn(): void {
+    const playerIndex = this.state.currentPlayerIndex;
+    const newPasses = this.state.consecutivePasses + 1;
+    if (newPasses >= this.state.players.length) {
+      this.handleBlockedGame();
+      return;
+    }
+    const move: Move = Object.freeze({
+      tile: this.state.players[playerIndex].hand[0],
+      end: 'right', orientedTile: orientFirstTile(this.state.players[playerIndex].hand[0]),
+      isPass: true, isDraw: false,
+    });
+    this.state = this.buildNextState({
+      newHistory: [...this.state.moveHistory, move],
+      resetPasses: false,
+      consecutivePasses: newPasses,
+    });
+  }
+
+  private handleBlockedGame(): void {
+    let minHandValue = Infinity;
+    let winnerIndex = -1;
+    for (let i = 0; i < this.state.players.length; i++) {
+      const hv = this.state.players[i].handValue;
+      if (hv < minHandValue) { minHandValue = hv; winnerIndex = i; }
+    }
+    this.endRound(winnerIndex);
+  }
+
+  private endRound(winnerIndex: number): void {
+    const winner = this.state.players[winnerIndex];
+    let roundPoints = 0;
+    const newScores = new Map(this.state.scores);
+    for (let i = 0; i < this.state.players.length; i++) {
+      if (i === winnerIndex) continue;
+      roundPoints += this.state.players[i].handValue;
+    }
+    const currentScore = newScores.get(winner.id) || 0;
+    newScores.set(winner.id, currentScore + roundPoints);
+    const winnerTotal = newScores.get(winner.id) || 0;
+    const isGameOver = winnerTotal >= this.config.targetScore;
+    const updatedPlayers = this.state.players.map((p, i) =>
+      Object.freeze({ ...p, score: newScores.get(p.id) || 0 })
+    );
+    this.state = Object.freeze({
+      ...this.state,
+      players: Object.freeze(updatedPlayers),
+      phase: isGameOver ? 'game_over' : 'round_end',
+      winner: isGameOver ? updatedPlayers[winnerIndex] : null,
+      lastRoundWinner: updatedPlayers[winnerIndex],
+      scores: newScores,
+      consecutivePasses: 0,
+    });
+  }
+
+  private buildNextState(params: any): GameState {
+    const nextIndex = (this.state.currentPlayerIndex + 1) % this.state.players.length;
+    return Object.freeze({
+      ...this.state,
+      board: params.newBoard || this.state.board,
+      players: params.newPlayers || this.state.players,
+      currentPlayerIndex: nextIndex,
+      boneyard: params.newBoneyard || this.state.boneyard,
+      moveHistory: Object.freeze(params.newHistory || this.state.moveHistory),
+      consecutivePasses: params.resetPasses ? 0 : (params.consecutivePasses ?? this.state.consecutivePasses),
+    });
+  }
+
+  canCurrentPlayerPlay(): boolean {
+    const player = this.getCurrentPlayer();
+    return hasPlayableTile(player.hand, this.board.leftPip, this.board.rightPip);
+  }
+
+  canCurrentPlayerDraw(): boolean {
+    return this.state.boneyard.length > 0;
+  }
+
+  isActuallyBlocked(): boolean {
+    for (const player of this.state.players) {
+      if (hasPlayableTile(player.hand, this.board.leftPip, this.board.rightPip)) return false;
+    }
+    return this.state.boneyard.length === 0;
+  }
+
+  reset(): void {
+    this.board.reset();
+    this.state = this.initializeGame();
+  }
+}
+
+// ============================================
 // OLD ENGINE FUNCTIONS (preserved for net.ts compatibility)
 // ============================================
 
@@ -513,25 +776,17 @@ export function runAllTests(): { passed: number; failed: number } {
   console.log("\n🧪 Domino Master v5.0 — Tests\n");
   let passed = 0, failed = 0;
 
-  // Test 1: Deck
   const deck = generateDeck();
   if (deck.length === TOTAL_TILES) { console.log('✅ Deck'); passed++; } else { console.error('FAIL Deck'); failed++; }
 
-  // Test 2: Orientation
   const t = createTile(3 as Pip, 5 as Pip);
   const o1 = orientTile(t, 3 as Pip);
   if (o1 && o1.leadingPip === 3 && o1.trailingPip === 5) { console.log('✅ Orientation'); passed++; } else { console.error('FAIL Orientation'); failed++; }
 
-  // Test 3: Board
   const board = BoardManager.createEmpty();
   board.playTile(createTile(3 as Pip, 5 as Pip), 'left');
   if (board.leftPip === 3 && board.rightPip === 5) { console.log('✅ Board'); passed++; } else { console.error('FAIL Board'); failed++; }
 
-  // Test 4: Game init
-  // Test 5: Blocked
-  // Test 6: Layout
-  // Test 7: Double rotation
-
-  console.log(`\n📊 ${passed}/7 passed, ${failed} failed`);
+  console.log(`\n📊 ${passed}/3 passed, ${failed} failed`);
   return { passed, failed };
 }
