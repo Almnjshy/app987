@@ -11,7 +11,8 @@ interface BoardProps {
   dropSideRefs?: React.MutableRefObject<{ left: HTMLDivElement | null; right: HTMLDivElement | null }>;
 }
 
-const CELL = 30; // بكسل لكل خلية
+// الإصلاح الجذري: حجم الخلية يجب أن يطابق حجم القطعة (md = 40x80)
+const CELL = 40;
 
 function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSide, dropSideRefs }: BoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -34,7 +35,11 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     return (
       <div
         className={`flex items-center justify-center ${className}`}
-        style={{ background: 'rgba(13, 122, 58, 0.15)', borderRadius: 16, border: '2px dashed rgba(201, 168, 76, 0.2)' }}
+        style={{
+          background: 'rgba(13, 122, 58, 0.15)',
+          borderRadius: 16,
+          border: '2px dashed rgba(201, 168, 76, 0.2)',
+        }}
       >
         <span className="text-[#B8A080] text-sm font-arabic">ابدأ اللعب</span>
       </div>
@@ -64,7 +69,11 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     <div
       ref={containerRef}
       className={`relative overflow-hidden ${className}`}
-      style={{ background: 'rgba(13, 122, 58, 0.1)', borderRadius: 16, border: '1px solid rgba(201, 168, 76, 0.15)' }}
+      style={{
+        background: 'rgba(13, 122, 58, 0.1)',
+        borderRadius: 16,
+        border: '1px solid rgba(201, 168, 76, 0.15)',
+      }}
     >
       <div
         className="absolute"
@@ -78,29 +87,22 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
         }}
       >
         {layout.tiles.map((p) => {
-          // حساب المركز الدقيق للقطعة في الشبكة
-          const cx = (pad + p.x + p.w / 2) * CELL;
-          const cy = (pad + p.y + p.h / 2) * CELL;
-
           return (
             <div
               key={p.tile.id}
-              className="absolute"
+              className="absolute flex items-center justify-center"
               style={{
-                left: cx,
-                top: cy,
-                width: 0,
-                height: 0,
-                zIndex: 1,
+                left: (pad + p.x) * CELL,
+                top: (pad + p.y) * CELL,
+                width: p.w * CELL,
+                height: p.h * CELL,
               }}
             >
               {/* 
-                الحل العبقري: وضع القطعة في مركز الإحداثيات (0,0) ثم إزاحتها للمنتصف
-                هذا يضمن أن دوران القطعة (Rotation) يحدث حول مركزها ولا يفيض على غيرها
+                القطعة الآن موضوعة في صندوق بنفس حجمها تماماً.
+                مكون DominoTile يتولى أمر التدوير (rotation) بنفسه.
               */}
-              <div style={{ position: 'absolute', transform: `translate(-50%, -50%) rotate(${p.rotation}deg)` }}>
-                <DominoTile tile={p.tile} size="md" faceUp={true} />
-              </div>
+              <DominoTile tile={p.tile} size="md" faceUp={true} rotation={p.rotation} />
             </div>
           );
         })}
@@ -110,7 +112,11 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
             ref={(el) => { if (dropSideRefs) dropSideRefs.current.left = el; }}
             onClick={() => onSelectSide?.('left')}
             className="absolute rounded-lg cursor-pointer animate-pulse z-10"
-            style={{ ...endZoneStyle(leftEndTile, 'left'), border: '2px dashed #2ECC40', background: 'rgba(46, 204, 64, 0.15)' }}
+            style={{
+              ...endZoneStyle(leftEndTile, 'left'),
+              border: '2px dashed #2ECC40',
+              background: 'rgba(46, 204, 64, 0.15)',
+            }}
           />
         )}
 
@@ -119,7 +125,11 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
             ref={(el) => { if (dropSideRefs) dropSideRefs.current.right = el; }}
             onClick={() => onSelectSide?.('right')}
             className="absolute rounded-lg cursor-pointer animate-pulse z-10"
-            style={{ ...endZoneStyle(rightEndTile, 'right'), border: '2px dashed #2ECC40', background: 'rgba(46, 204, 64, 0.15)' }}
+            style={{
+              ...endZoneStyle(rightEndTile, 'right'),
+              border: '2px dashed #2ECC40',
+              background: 'rgba(46, 204, 64, 0.15)',
+            }}
           />
         )}
       </div>
