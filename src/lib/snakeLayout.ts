@@ -1,6 +1,6 @@
 /**
  * محرك التخطيط الشبكي (Grid Layout Engine).
- * يطابق الأرقام بدقة، يمنع التداخل، وينعطف بزاوية 90 درجة مثالية.
+ * يطابق الأرقام بدقة 100%، يمنع التداخل، وينعطف بزاوية 90 درجة مثالية.
  */
 
 import type { ChainTile, Tile } from '@/types/game';
@@ -29,6 +29,27 @@ interface EndPoint {
 
 const BOUNDARY = 8; // المسافة الآمنة قبل الانعطاف
 
+/**
+ * دالة حساب الزاوية الصارمة:
+ * تحدد أي وجه من القطعة يلامس الطاولة بناءً على الاتجاه.
+ */
+function getRotation(tile: Tile, inward: number, dir: Dir): number {
+  if (dir === 'RIGHT') {
+    // الطاولة على اليسار (West)
+    return tile.top === inward ? 270 : 90;
+  } else if (dir === 'LEFT') {
+    // الطاولة على اليمين (East)
+    return tile.top === inward ? 90 : 270;
+  } else if (dir === 'DOWN') {
+    // الطاولة في الأعلى (North)
+    return tile.top === inward ? 0 : 180;
+  } else if (dir === 'UP') {
+    // الطاولة في الأسفل (South)
+    return tile.top === inward ? 180 : 0;
+  }
+  return 0;
+}
+
 export function layoutChain(chain: ChainTile[]): SnakeLayout {
   if (chain.length === 0) return { tiles: [], width: 0, height: 0 };
 
@@ -43,7 +64,8 @@ export function layoutChain(chain: ChainTile[]): SnakeLayout {
   const fh = fIsDouble ? 2 : 1;
   const fx = -fw / 2;
   const fy = -fh / 2;
-  place(first.tile, fx, fy, fw, fh, fIsDouble ? 0 : 90, fIsDouble);
+  // القطعة الأولى توضع بشكل عمودي دائماً
+  place(first.tile, fx, fy, fw, fh, fIsDouble ? 0 : 0, fIsDouble);
 
   let leftEnd: EndPoint = { x: fx, y: fy + fh / 2, dir: 'LEFT' };
   let rightEnd: EndPoint = { x: fx + fw, y: fy + fh / 2, dir: 'RIGHT' };
@@ -73,8 +95,7 @@ export function layoutChain(chain: ChainTile[]): SnakeLayout {
           w = 2; h = 1;
           x = dir === 'RIGHT' ? end.x : end.x - 2;
           y = end.y - 0.5;
-          // تحديد الاتجاه الصحيح للأرقام
-          rot = (dir === 'RIGHT' ? (tile.top === inward ? 90 : 270) : (tile.bottom === inward ? 90 : 270));
+          rot = getRotation(tile, inward, dir);
         }
       } else {
         if (isDouble) {
@@ -85,7 +106,7 @@ export function layoutChain(chain: ChainTile[]): SnakeLayout {
           w = 1; h = 2;
           x = end.x - 0.5;
           y = dir === 'DOWN' ? end.y : end.y - 2;
-          rot = dir === 'DOWN' ? (tile.top === inward ? 0 : 180) : (tile.bottom === inward ? 0 : 180);
+          rot = getRotation(tile, inward, dir);
         }
       }
 
@@ -111,20 +132,18 @@ export function layoutChain(chain: ChainTile[]): SnakeLayout {
           w = 2; h = 1;
           if (dir === 'RIGHT') {
             x = end.x; y = end.y - 0.5;
-            rot = tile.top === inward ? 90 : 270;
           } else {
             x = end.x - 2; y = end.y - 0.5;
-            rot = tile.bottom === inward ? 90 : 270;
           }
+          rot = getRotation(tile, inward, dir);
         } else {
           w = 1; h = 2;
           if (dir === 'DOWN') {
             x = end.x - 0.5; y = end.y;
-            rot = tile.top === inward ? 0 : 180;
           } else {
             x = end.x - 0.5; y = end.y - 2;
-            rot = tile.bottom === inward ? 0 : 180;
           }
+          rot = getRotation(tile, inward, dir);
         }
 
         place(tile, x, y, w, h, rot, isDouble);
