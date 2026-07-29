@@ -6,11 +6,8 @@ import { DominoTile } from './DominoTile';
 interface BoardProps {
   chain: ChainTile[];
   className?: string;
-  /** تفعيل تمييز الطرفين القانونيين للقطعة المختارة */
   highlightEnds?: EndSide[];
-  /** النقر على طرف لوضع القطعة المختارة */
   onSelectSide?: (side: EndSide) => void;
-  /** معرّفات مناطق الإسقاط للسحب والإفلات */
   dropSideRefs?: React.MutableRefObject<{ left: HTMLDivElement | null; right: HTMLDivElement | null }>;
 }
 
@@ -53,15 +50,11 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
   const fullH = (layout.height + pad * 2) * CELL;
   const scale = Math.min(containerSize.w / fullW, containerSize.h / fullH, 1);
 
-  // مواضع الطرفين الحرّين لعرض التمييز ومناطق الإسقاط
   const leftEndTile = layout.tiles.find((p) => p.tile.id === chain[0].tile.id);
   const rightEndTile = layout.tiles.find((p) => p.tile.id === chain[chain.length - 1].tile.id);
 
   const endZoneStyle = (p: { x: number; y: number; w: number; h: number }, side: EndSide): React.CSSProperties => {
     const cellX = side === 'left' ? p.x - 1.2 : p.x + p.w + 0.2;
-    
-    // إصلاح الإحداثي العمودي: حساب المركز الدقيق للقطعة (سواء كانت عادية أو مزدوجة)
-    // ثم طرح نصف ارتفاع منطقة الإسقاط (1.5 / 2 = 0.75) لتوسيطها تماماً على الحافة
     const centerY = p.y + p.h / 2;
     const cellY = centerY - 0.75;
 
@@ -94,36 +87,33 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
           transformOrigin: 'center center',
         }}
       >
-        {layout.tiles.map((p) => (
-          <div
-            key={p.tile.id}
-            className="absolute"
-            style={{
-              left: (pad + p.x) * CELL + (p.w * CELL) / 2,
-              top: (pad + p.y) * CELL + (p.h * CELL) / 2,
-              width: 0,
-              height: 0,
-            }}
-          >
-            {/* القطعة رأسية التصميم (سمك×طول)، نوسّطها في مساحتها */}
+        {layout.tiles.map((p) => {
+          const targetW = p.w * CELL;
+          const targetH = p.h * CELL;
+          
+          return (
             <div
+              key={p.tile.id}
+              className="absolute flex items-center justify-center"
               style={{
-                position: 'absolute',
-                left: -CELL / 2,
-                top: -CELL,
+                left: (pad + p.x) * CELL,
+                top: (pad + p.y) * CELL,
+                width: targetW,
+                height: targetH,
               }}
             >
-              <DominoTile
-                tile={p.tile}
-                size="md"
-                faceUp={true}
-                rotation={p.rotation}
-              />
+              <div style={{ width: '100%', height: '100%' }}>
+                <DominoTile
+                  tile={p.tile}
+                  size="md"
+                  faceUp={true}
+                  rotation={p.rotation}
+                />
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
 
-        {/* تمييز الطرف الأيسر */}
         {leftEndTile && highlightEnds.includes('left') && (
           <div
             ref={(el) => { if (dropSideRefs) dropSideRefs.current.left = el; }}
@@ -137,7 +127,6 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
           />
         )}
 
-        {/* تمييز الطرف الأيمن */}
         {rightEndTile && highlightEnds.includes('right') && (
           <div
             ref={(el) => { if (dropSideRefs) dropSideRefs.current.right = el; }}
