@@ -1,6 +1,6 @@
 /**
  * محرك التخطيط الشبكي (Grid Layout Engine).
- * يعتمد على حد ثابت للانعطاف، مما يسمح للـ Zoom بالعمل بشكل طبيعي.
+ * يطابق الأرقام بدقة، يمنع التداخل، وينعطف بزاوية 90 درجة مثالية.
  */
 
 import type { ChainTile, Tile } from '@/types/game';
@@ -29,8 +29,6 @@ interface EndPoint {
   dir: Dir;
 }
 
-const BOUNDARY = 6; // حد ثابت للانعطاف (ينعطف كل 6 خلايا تقريباً)
-
 function getRotation(tile: Tile, inward: number, dir: Dir): number {
   if (dir === 'RIGHT') return tile.top === inward ? 270 : 90;
   if (dir === 'LEFT') return tile.top === inward ? 90 : 270;
@@ -39,10 +37,13 @@ function getRotation(tile: Tile, inward: number, dir: Dir): number {
   return 0;
 }
 
-export function layoutChain(chain: ChainTile[]): SnakeLayout {
+export function layoutChain(chain: ChainTile[], maxW: number = 20, maxH: number = 20): SnakeLayout {
   if (chain.length === 0) return { tiles: [], width: 0, height: 0 };
 
   const placed: PositionedTile[] = [];
+  const BOUNDARY_X = Math.max(4, maxW / 2);
+  const BOUNDARY_Y = Math.max(4, maxH / 2);
+
   const place = (tile: Tile, x: number, y: number, w: number, h: number, rotation: number, isDouble: boolean) => {
     placed.push({ tile, x, y, w, h, rotation, isDouble });
   };
@@ -88,8 +89,7 @@ export function layoutChain(chain: ChainTile[]): SnakeLayout {
         rot = getRotation(tile, inward, dir);
       }
 
-      // فحص الحدود الثابتة
-      const outOfBounds = x < -BOUNDARY || x + w > BOUNDARY || y < -BOUNDARY || y + h > BOUNDARY;
+      const outOfBounds = x < -BOUNDARY_X || x + w > BOUNDARY_X || y < -BOUNDARY_Y || y + h > BOUNDARY_Y;
       if (!outOfBounds) {
         place(tile, x, y, w, h, rot, isDouble);
         if (dir === 'RIGHT') end = { cx: x + w, cy: end.cy, dir: 'RIGHT' };
@@ -99,7 +99,7 @@ export function layoutChain(chain: ChainTile[]): SnakeLayout {
         placedSuccessfully = true;
       }
 
-      // محاولة 2: انعطاف 90 درجة (L-Shape Perfect Corner)
+      // محاولة 2: انعطاف 90 درجة
       if (!placedSuccessfully) {
         if (dir === 'RIGHT') dir = isRight ? 'DOWN' : 'UP';
         else if (dir === 'LEFT') dir = isRight ? 'UP' : 'DOWN';
@@ -124,6 +124,7 @@ export function layoutChain(chain: ChainTile[]): SnakeLayout {
           end = { cx: x + 0.5, cy: y, dir: 'UP' };
         }
 
+        // حتى لو كانت خارج الحدود قليلاً، نضعها ونترك الـ Zoom يصغر الشاشة
         place(tile, x, y, w, h, rot, isDouble);
       }
     }
