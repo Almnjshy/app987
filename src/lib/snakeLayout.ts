@@ -88,12 +88,17 @@ function layoutArm(
       const w = 1;
       const h = 2;
       const x = cursor.dir === 1 ? cursor.x : cursor.x - 1;
-      const y = cursor.turnSign === 1 ? cursor.y + 1 : cursor.y - 2;
-      // النصف المتصل بالقادم يظهر في الأعلى (قيمة الدخول)
-      const rotation = tile.top === inward ? 0 : 180;
+      
+      // إصلاح الإحداثي: يجب أن تبدأ القطعة العمودية من نفس صف الخط الأفقي لتتصل به
+      const y = cursor.turnSign === 1 ? cursor.y : cursor.y - 1;
+      
+      // إصلاح الدوران: الجزء السفلي للقطعة العمودية هو ما يلامس الخط عند الانعطاف للأسفل
+      const rotation = tile.bottom === inward ? 0 : 180;
+      
       out.push({ tile, x, y, w, h, rotation, isDouble: false });
-      // صف جديد
-      cursor.y += cursor.turnSign * 2;
+      
+      // إصلاح قفز الصف: ينزاح بمقدار 1 فقط للداخل
+      cursor.y += cursor.turnSign * 1;
       cursor.dir = (cursor.dir * -1) as 1 | -1;
       // الحافة الحرة الآن عند الجهة الأخرى من قطعة الزاوية
       cursor.x = cursor.dir === 1 ? x + 1 : x;
