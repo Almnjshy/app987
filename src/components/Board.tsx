@@ -59,9 +59,15 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
 
   const endZoneStyle = (p: { x: number; y: number; w: number; h: number }, side: EndSide): React.CSSProperties => {
     const cellX = side === 'left' ? p.x - 1.2 : p.x + p.w + 0.2;
+    
+    // إصلاح الإحداثي العمودي: حساب المركز الدقيق للقطعة (سواء كانت عادية أو مزدوجة)
+    // ثم طرح نصف ارتفاع منطقة الإسقاط (1.5 / 2 = 0.75) لتوسيطها تماماً على الحافة
+    const centerY = p.y + p.h / 2;
+    const cellY = centerY - 0.75;
+
     return {
       left: (pad + cellX) * CELL,
-      top: (pad + p.y - 0.25) * CELL,
+      top: (pad + cellY) * CELL,
       width: CELL * 1.5,
       height: CELL * 1.5,
     };
