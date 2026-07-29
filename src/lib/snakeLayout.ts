@@ -1,6 +1,6 @@
 /**
  * محرك التخطيط الشبكي (Grid Layout Engine).
- * يستقبل أبعاد الشاشة لينعطف بأمان، ويستخدم (Center-Point) لمنع التداخل نهائياً.
+ * يطابق الأرقام بدقة، يمنع التداخل، وينعطف بزاوية 90 درجة مثالية.
  */
 
 import type { ChainTile, Tile } from '@/types/game';
@@ -24,8 +24,8 @@ export interface SnakeLayout {
 type Dir = 'RIGHT' | 'LEFT' | 'DOWN' | 'UP';
 
 interface EndPoint {
-  cx: number; // مركز الحافة المكشوفة على المحور السيني
-  cy: number; // مركز الحافة المكشوفة على المحور الصادي
+  cx: number;
+  cy: number;
   dir: Dir;
 }
 
@@ -41,8 +41,8 @@ export function layoutChain(chain: ChainTile[], maxW: number = 20, maxH: number 
   if (chain.length === 0) return { tiles: [], width: 0, height: 0 };
 
   const placed: PositionedTile[] = [];
-  const BOUNDARY_X = maxW / 2;
-  const BOUNDARY_Y = maxH / 2;
+  const BOUNDARY_X = Math.max(4, maxW / 2);
+  const BOUNDARY_Y = Math.max(4, maxH / 2);
 
   const place = (tile: Tile, x: number, y: number, w: number, h: number, rotation: number, isDouble: boolean) => {
     placed.push({ tile, x, y, w, h, rotation, isDouble });
@@ -56,7 +56,6 @@ export function layoutChain(chain: ChainTile[], maxW: number = 20, maxH: number 
   const fy = -fh / 2;
   place(first.tile, fx, fy, fw, fh, 0, fIsDouble);
 
-  // النقطة المركزية للحافة المكشوفة
   let leftEnd: EndPoint = { cx: fx, cy: fy + fh / 2, dir: 'LEFT' };
   let rightEnd: EndPoint = { cx: fx + fw, cy: fy + fh / 2, dir: 'RIGHT' };
 
@@ -75,7 +74,7 @@ export function layoutChain(chain: ChainTile[], maxW: number = 20, maxH: number 
       let w = 0, h = 0, x = 0, y = 0, rot = 0;
       let placedSuccessfully = false;
 
-      // محاولة 1: الاستمرار في نفس الاتجاه (حساب بناءً على المركز)
+      // محاولة 1: الاستمرار في نفس الاتجاه
       if (dir === 'RIGHT') {
         w = 2; h = 1; x = end.cx; y = end.cy - 0.5;
         rot = getRotation(tile, inward, dir);
@@ -90,7 +89,6 @@ export function layoutChain(chain: ChainTile[], maxW: number = 20, maxH: number 
         rot = getRotation(tile, inward, dir);
       }
 
-      // فحص الحدود بناءً على أبعاد الشاشة
       const outOfBounds = x < -BOUNDARY_X || x + w > BOUNDARY_X || y < -BOUNDARY_Y || y + h > BOUNDARY_Y;
       if (!outOfBounds) {
         place(tile, x, y, w, h, rot, isDouble);
@@ -101,7 +99,7 @@ export function layoutChain(chain: ChainTile[], maxW: number = 20, maxH: number 
         placedSuccessfully = true;
       }
 
-      // محاولة 2: انعطاف 90 درجة (L-Shape Perfect Corner)
+      // محاولة 2: انعطاف 90 درجة
       if (!placedSuccessfully) {
         if (dir === 'RIGHT') dir = isRight ? 'DOWN' : 'UP';
         else if (dir === 'LEFT') dir = isRight ? 'UP' : 'DOWN';
@@ -109,23 +107,24 @@ export function layoutChain(chain: ChainTile[], maxW: number = 20, maxH: number 
         else if (dir === 'UP') dir = isRight ? 'RIGHT' : 'LEFT';
 
         if (dir === 'RIGHT') {
-          w = 2; h = 1; x = end.cx + 0.5; y = end.cy;
+          w = 2; h = 1; x = end.cx; y = end.cy - 0.5;
           rot = getRotation(tile, inward, dir);
           end = { cx: x + w, cy: y + 0.5, dir: 'RIGHT' };
         } else if (dir === 'LEFT') {
-          w = 2; h = 1; x = end.cx - 2.5; y = end.cy - 1;
+          w = 2; h = 1; x = end.cx - 2; y = end.cy - 0.5;
           rot = getRotation(tile, inward, dir);
           end = { cx: x, cy: y + 0.5, dir: 'LEFT' };
         } else if (dir === 'DOWN') {
-          w = 1; h = 2; x = end.cx - 1; y = end.cy + 0.5;
+          w = 1; h = 2; x = end.cx - 0.5; y = end.cy;
           rot = getRotation(tile, inward, dir);
           end = { cx: x + 0.5, cy: y + h, dir: 'DOWN' };
         } else if (dir === 'UP') {
-          w = 1; h = 2; x = end.cx; y = end.cy - 2.5;
+          w = 1; h = 2; x = end.cx - 0.5; y = end.cy - 2;
           rot = getRotation(tile, inward, dir);
           end = { cx: x + 0.5, cy: y, dir: 'UP' };
         }
 
+        // حتى لو كانت خارج الحدود قليلاً، نضعها ونترك الـ Zoom يصغر الشاشة
         place(tile, x, y, w, h, rot, isDouble);
       }
     }
