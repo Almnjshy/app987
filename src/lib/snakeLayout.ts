@@ -1,6 +1,6 @@
 /**
  * محرك التخطيط الشبكي (Grid Layout Engine).
- * يطابق الأرقام بدقة، يمنع التداخل، وينعطف بزاوية 90 درجة مثالية.
+ * يعتمد على حد ثابت للانعطاف، ويعالج وضعية المزدوجة (Perpendicular) بدقة.
  */
 
 import type { ChainTile, Tile } from '@/types/game';
@@ -29,6 +29,8 @@ interface EndPoint {
   dir: Dir;
 }
 
+const BOUNDARY = 6; // حد ثابت للانعطاف
+
 function getRotation(tile: Tile, inward: number, dir: Dir): number {
   if (dir === 'RIGHT') return tile.top === inward ? 270 : 90;
   if (dir === 'LEFT') return tile.top === inward ? 90 : 270;
@@ -37,24 +39,23 @@ function getRotation(tile: Tile, inward: number, dir: Dir): number {
   return 0;
 }
 
-export function layoutChain(chain: ChainTile[], maxW: number = 20, maxH: number = 20): SnakeLayout {
+export function layoutChain(chain: ChainTile[]): SnakeLayout {
   if (chain.length === 0) return { tiles: [], width: 0, height: 0 };
 
   const placed: PositionedTile[] = [];
-  const BOUNDARY_X = Math.max(4, maxW / 2);
-  const BOUNDARY_Y = Math.max(4, maxH / 2);
-
   const place = (tile: Tile, x: number, y: number, w: number, h: number, rotation: number, isDouble: boolean) => {
     placed.push({ tile, x, y, w, h, rotation, isDouble });
   };
 
+  // 1. وضع القطعة الأولى
   const first = chain.find((c) => c.side === null) || chain[0];
   const fIsDouble = first.tile.isDouble;
   const fw = fIsDouble ? 1 : 2;
   const fh = fIsDouble ? 2 : 1;
   const fx = -fw / 2;
   const fy = -fh / 2;
-  place(first.tile, fx, fy, fw, fh, 0, fIsDouble);
+  // إذا كانت مزدوجة توضع عمودية (0)، وإذا كانت عادية توضع أفقية (90)
+  place(first.tile, fx, fy, fw, fh, fIsDouble ? 0 : 90, fIsDouble);
 
   let leftEnd: EndPoint = { cx: fx, cy: fy + fh / 2, dir: 'LEFT' };
   let rightEnd: EndPoint = { cx: fx + fw, cy: fy + fh / 2, dir: 'RIGHT' };
@@ -74,22 +75,32 @@ export function layoutChain(chain: ChainTile[], maxW: number = 20, maxH: number 
       let w = 0, h = 0, x = 0, y = 0, rot = 0;
       let placedSuccessfully = false;
 
-      // محاولة 1: الاستمرار في نفس الاتجاه
-      if (dir === 'RIGHT') {
-        w = 2; h = 1; x = end.cx; y = end.cy - 0.5;
-        rot = getRotation(tile, inward, dir);
-      } else if (dir === 'LEFT') {
-        w = 2; h = 1; x = end.cx - 2; y = end.cy - 0.5;
-        rot = getRotation(tile, inward, dir);
-      } else if (dir === 'DOWN') {
-        w = 1; h = 2; x = end.cx - 0.5; y = end.cy;
-        rot = getRotation(tile, inward, dir);
-      } else if (dir === 'UP') {
-        w = 1; h = 2; x = end.cx - 0.5; y = end.cy - 2;
-        rot = getRotation(tile, inward, dir);
-      }
+      // دالة ذكية لتحديد الأبعاد والاتجاه بناءً على نوع القطعة
+      const setDims = (currentDir: Dir) => {
+        if (currentDir === 'RIGHT' || currentDir === 'LEFT') {
+          if (isDouble) {
+            w = 1; h = 2; rot = 0; // مزدوجة عمودية في خط أفقي
+          } else {
+            w = 2; h = 1; rot = getRotation(tile, inward, currentDir);
+          }
+        } else { // DOWN أو UP
+          if (isDouble) {
+            w = 2; h = 1; rot = 90; // مزدوجة أفقية في خط عمودي
+          } else {
+            w = 1; h = 2; rot = getRotation(tile, inward, currentDir);
+          }
+        }
+      };
 
-      const outOfBounds = x < -BOUNDARY_X || x + w > BOUNDARY_X || y < -BOUNDARY_Y || y + h > BOUNDARY_Y;
+      // محاولة 1: الاستمرار في نفس الاتجاه
+      setDims(dir);
+
+      if (dir === 'RIGHT') { x = end.cx; y = end.cy - h / 2; }
+      else if (dir === 'LEFT') { x = end.cx - w; y = end.cy - h / 2; }
+      else if (dir === 'DOWN') { x = end.cx - w / 2; y = end.cy; }
+      else if (dir === 'UP') { x = end.cx - w / 2; y = end.cy - h; }
+
+      const outOfBounds = x < -BOUNDARY || x + w > BOUNDARY || y < -BOUNDARY || y + h > BOUNDARY;
       if (!outOfBounds) {
         place(tile, x, y, w, h, rot, isDouble);
         if (dir === 'RIGHT') end = { cx: x + w, cy: end.cy, dir: 'RIGHT' };
@@ -106,25 +117,22 @@ export function layoutChain(chain: ChainTile[], maxW: number = 20, maxH: number 
         else if (dir === 'DOWN') dir = isRight ? 'LEFT' : 'RIGHT';
         else if (dir === 'UP') dir = isRight ? 'RIGHT' : 'LEFT';
 
+        setDims(dir);
+
         if (dir === 'RIGHT') {
-          w = 2; h = 1; x = end.cx; y = end.cy - 0.5;
-          rot = getRotation(tile, inward, dir);
-          end = { cx: x + w, cy: y + 0.5, dir: 'RIGHT' };
+          x = end.cx; y = end.cy - h / 2;
+          end = { cx: x + w, cy: end.cy, dir: 'RIGHT' };
         } else if (dir === 'LEFT') {
-          w = 2; h = 1; x = end.cx - 2; y = end.cy - 0.5;
-          rot = getRotation(tile, inward, dir);
-          end = { cx: x, cy: y + 0.5, dir: 'LEFT' };
+          x = end.cx - w; y = end.cy - h / 2;
+          end = { cx: x, cy: end.cy, dir: 'LEFT' };
         } else if (dir === 'DOWN') {
-          w = 1; h = 2; x = end.cx - 0.5; y = end.cy;
-          rot = getRotation(tile, inward, dir);
-          end = { cx: x + 0.5, cy: y + h, dir: 'DOWN' };
+          x = end.cx - w / 2; y = end.cy;
+          end = { cx: end.cx, cy: y + h, dir: 'DOWN' };
         } else if (dir === 'UP') {
-          w = 1; h = 2; x = end.cx - 0.5; y = end.cy - 2;
-          rot = getRotation(tile, inward, dir);
-          end = { cx: x + 0.5, cy: y, dir: 'UP' };
+          x = end.cx - w / 2; y = end.cy - h;
+          end = { cx: end.cx, cy: y, dir: 'UP' };
         }
 
-        // حتى لو كانت خارج الحدود قليلاً، نضعها ونترك الـ Zoom يصغر الشاشة
         place(tile, x, y, w, h, rot, isDouble);
       }
     }
