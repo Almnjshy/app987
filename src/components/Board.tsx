@@ -28,7 +28,6 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     return () => ro.disconnect();
   }, []);
 
-  // تمرير أبعاد الشاشة للمحرك (مقسومة على حجم الخلية)
   const layout = useMemo(() => {
     const w = Math.floor(containerSize.w / CELL);
     const h = Math.floor(containerSize.h / CELL);
@@ -39,7 +38,11 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     return (
       <div
         className={`flex items-center justify-center ${className}`}
-        style={{ background: 'rgba(13, 122, 58, 0.15)', borderRadius: 16, border: '2px dashed rgba(201, 168, 76, 0.2)' }}
+        style={{
+          background: 'rgba(13, 122, 58, 0.15)',
+          borderRadius: 16,
+          border: '2px dashed rgba(201, 168, 76, 0.2)',
+        }}
       >
         <span className="text-[#B8A080] text-sm font-arabic">ابدأ اللعب</span>
       </div>
@@ -49,7 +52,10 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
   const pad = 1;
   const fullW = (layout.width + pad * 2) * CELL;
   const fullH = (layout.height + pad * 2) * CELL;
-  const scale = Math.min(containerSize.w / fullW, containerSize.h / fullH, 1);
+  
+  // حماية رياضية لمنع scale من أن يكون NaN أو صفر
+  const rawScale = Math.min(containerSize.w / fullW, containerSize.h / fullH);
+  const scale = isFinite(rawScale) && rawScale > 0 ? Math.min(rawScale, 1) : 1;
 
   const leftEndTile = layout.tiles.find((p) => p.tile.id === chain[0].tile.id);
   const rightEndTile = layout.tiles.find((p) => p.tile.id === chain[chain.length - 1].tile.id);
@@ -69,7 +75,11 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     <div
       ref={containerRef}
       className={`relative overflow-hidden ${className}`}
-      style={{ background: 'rgba(13, 122, 58, 0.1)', borderRadius: 16, border: '1px solid rgba(201, 168, 76, 0.15)' }}
+      style={{
+        background: 'rgba(13, 122, 58, 0.1)',
+        borderRadius: 16,
+        border: '1px solid rgba(201, 168, 76, 0.15)',
+      }}
     >
       <div
         className="absolute"
