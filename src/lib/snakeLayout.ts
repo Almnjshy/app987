@@ -1,153 +1,152 @@
 /**
- * منطق عرض سلسلة الدومينو (Snake Layout).
- * يبدأ من منتصف الطاولة، يمتد يميناً ويساراً، وينعطف تلقائياً
- * عند حدود الطاولة دون أي تداخل بين القطع.
- * هذا المنطق عرض فقط — الحقيقة المنطقية تبقى في المحرك.
+ * محرك التخطيط الشبكي (Grid Layout Engine).
+ * يуправ المساحة بذكاء، يمنع التداخل (Collision Detection)،
+ * وينعطف قبل الحواف بمسافة آمنة لضمان استغلال الطاولة بالكامل.
  */
 
 import type { ChainTile, Tile } from '@/types/game';
 
 export interface PositionedTile {
   tile: Tile;
-  /** الإحداثيات بوحدة الخلية (سمك القطعة = 1، طولها = 2) */
-  x: number;
-  y: number;
-  /** العرض والارتفاع بالخلايا */
-  w: number;
-  h: number;
-  /** زاوية الدوران بالدرجات لعرض القطعة الرأسية */
+  x: number; // الإحداثي السيني (بكسل)
+  y: number; // الإحداثي الصادي (بكسل)
+  w: number; // العرض (بكسل)
+  h: number; // الارتفاع (بكسل)
   rotation: number;
   isDouble: boolean;
 }
 
 export interface SnakeLayout {
   tiles: PositionedTile[];
-  /** أبعاد مساحة العرض بالخلايا */
   width: number;
   height: number;
 }
 
-/** أقصى امتداد أفقي لكل ذراع قبل الانعطاف (بالخلايا) */
-const ARM_LIMIT = 7;
+type Dir = 'RIGHT' | 'LEFT' | 'DOWN' | 'UP';
 
-interface ArmCursor {
-  x: number; // الحافة الحرة
-  y: number; // صف البداية (أعلى القطع الأفقية)
-  dir: 1 | -1;
-  turnSign: 1 | -1; // +1 انعطاف للأسفل، -1 للأعلى
+interface EndPoint {
+  x: number; y: number; dir: Dir;
 }
 
-/**
- * اختيار زاوية الدوران بحيث تظهر قيمة معينة على جهة معينة.
- * القطعة الأصل رأسية: rotation=90 (مع عقارب الساعة) يجعل النصف العلوي شرقاً.
- */
-function rotationFor(tile: Tile, value: number, face: 'east' | 'west'): number {
-  if (face === 'east') {
-    return tile.top === value ? 90 : 270;
-  }
-  return tile.bottom === value ? 90 : 270;
+interface BoundingBox {
+  x1: number; y1: number; x2: number; y2: number;
 }
 
-function layoutArm(
-  tiles: ChainTile[],
-  inwardValue: (ct: ChainTile) => number,
-  startX: number,
-  bound: number,
-  turnSign: 1 | -1,
-  out: PositionedTile[]
-): void {
-  const cursor: ArmCursor = { x: startX, y: 0, dir: turnSign === 1 ? 1 : -1, turnSign };
-  cursor.dir = bound > startX ? 1 : -1;
+const TILE_W = 40;  // عرض القطعة الأفقية
+const TILE_H = 20;  // ارتفاع القطعة الأفقية
+const BOUNDARY = 120; // المسافة الآمنة قبل الانعطاف
 
-  for (const ct of tiles) {
-    const { tile } = ct;
-    const inward = inwardValue(ct);
-
-    if (tile.isDouble) {
-      const w = 1;
-      const h = 2;
-      const x = cursor.dir === 1 ? cursor.x : cursor.x - 1;
-      const y = cursor.y - 0.5;
-      out.push({ tile, x, y, w, h, rotation: 0, isDouble: true });
-      cursor.x += cursor.dir * 1;
-      continue;
-    }
-
-    const nextEdge = cursor.x + cursor.dir * 2;
-    const needTurn =
-      (cursor.dir === 1 && nextEdge > bound) ||
-      (cursor.dir === -1 && nextEdge < bound);
-
-    if (needTurn) {
-      const w = 1;
-      const h = 2;
-      const x = cursor.dir === 1 ? cursor.x : cursor.x - 1;
-      
-      // إصلاح الإحداثي: يجب أن تبدأ القطعة العمودية من نفس صف الخط الأفقي لتتصل به
-      const y = cursor.turnSign === 1 ? cursor.y : cursor.y - 2;
-      const rotation = tile.bottom === inward ? 0 : 180;
-      
-      out.push({ tile, x, y, w, h, rotation, isDouble: false });
-      
-      // إصلاح قفز الصف: ينزاح للأسفل بمقدار 2، وللأعلى بمقدار 3 (ليكون النصف العلوي هو نقطة الاتصال)
-      cursor.y += cursor.turnSign === 1 ? 2 : -3;
-      cursor.dir = (cursor.dir * -1) as 1 | -1;
-      cursor.x = cursor.dir === 1 ? x + 1 : x;
-      continue;
-    }
-
-    const w = 2;
-    const h = 1;
-    const x = cursor.dir === 1 ? cursor.x : cursor.x - 2;
-    const y = cursor.y;
-    const face: 'east' | 'west' = cursor.dir === 1 ? 'west' : 'east';
-    const rotation = rotationFor(tile, inward, face);
-    out.push({ tile, x, y, w, h, rotation, isDouble: false });
-    cursor.x = nextEdge;
-  }
-}
-
-/** حساب التخطيط الكامل للسلسلة. */
 export function layoutChain(chain: ChainTile[]): SnakeLayout {
   if (chain.length === 0) return { tiles: [], width: 0, height: 0 };
 
+  const placed: PositionedTile[] = [];
+  const occupied: BoundingBox[] = [];
+
+  const checkCollision = (x: number, y: number, w: number, h: number): boolean => {
+    const box = { x1: x, y1: y, x2: x + w, y2: y + h };
+    for (const o of occupied) {
+      if (box.x1 < o.x2 && box.x2 > o.x1 && box.y1 < o.y2 && box.y2 > o.y1) {
+        return true; // يوجد تصادم
+      }
+    }
+    return false;
+  };
+
+  const place = (tile: Tile, x: number, y: number, w: number, h: number, rotation: number, isDouble: boolean) => {
+    placed.push({ tile, x, y, w, h, rotation, isDouble });
+    occupied.push({ x1: x, y1: y, x2: x + w, y2: y + h });
+  };
+
+  // 1. وضع القطعة الأولى في المنتصف
   const first = chain.find((ct) => ct.side === null) ?? chain[0];
-  const rightGroup = chain.filter((ct) => ct.side === 'right'); // ترتيب اللعب = من المركز للخارج
-  const leftGroup = chain.filter((ct) => ct.side === 'left').reverse(); // من المركز للخارج
-
-  const out: PositionedTile[] = [];
-
-  // القطعة الأولى في منتصف الطاولة
   const firstIsDouble = first.tile.isDouble;
-  const firstW = firstIsDouble ? 1 : 2;
-  const firstH = firstIsDouble ? 2 : 1;
-  out.push({
-    tile: first.tile,
-    x: 0,
-    y: firstIsDouble ? -0.5 : 0,
-    w: firstW,
-    h: firstH,
-    rotation: firstIsDouble ? 0 : 90,
-    isDouble: firstIsDouble,
-  });
+  const fw = firstIsDouble ? TILE_H : TILE_W;
+  const fh = firstIsDouble ? TILE_W : TILE_H;
+  const fx = -fw / 2;
+  const fy = -fh / 2;
+  place(first.tile, fx, fy, fw, fh, firstIsDouble ? 0 : 90, firstIsDouble);
 
-  // الذراع اليمنى: تبدأ من الحافة اليمنى للقطعة الأولى، تنكسر للأسفل
-  layoutArm(rightGroup, (ct) => ct.left, firstW, ARM_LIMIT, 1, out);
-  // الذراع اليسرى: تبدأ من الحافة اليسرى، تنكسر للأعلى
-  layoutArm(leftGroup, (ct) => ct.right, 0, -ARM_LIMIT, -1, out);
+  let leftEnd: EndPoint = { x: fx, y: fy + fh / 2, dir: 'LEFT' };
+  let rightEnd: EndPoint = { x: fx + fw, y: fy + fh / 2, dir: 'RIGHT' };
 
-  // تطبيع الإحداثيات لتبدأ من الصفر
+  // 2. دالة بناء الذراع (يسار أو يمين)
+  const buildArm = (isRight: boolean) => {
+    const group = chain.filter((ct) => ct.side === (isRight ? 'right' : 'left')).reverse();
+    let end = isRight ? rightEnd : leftEnd;
+
+    for (const ct of group) {
+      const tile = ct.tile;
+      const isDouble = tile.isDouble;
+      let placedSuccessfully = false;
+
+      // محاولة 1: الاستمرار في نفس الاتجاه
+      let dir = end.dir;
+      let w = (dir === 'RIGHT' || dir === 'LEFT') ? (isDouble ? TILE_H : TILE_W) : (isDouble ? TILE_W : TILE_H);
+      let h = (dir === 'RIGHT' || dir === 'LEFT') ? (isDouble ? TILE_W : TILE_H) : (isDouble ? TILE_H : TILE_W);
+      let x = 0, y = 0;
+
+      if (dir === 'RIGHT') { x = end.x; y = end.y - h / 2; }
+      else if (dir === 'LEFT') { x = end.x - w; y = end.y - h / 2; }
+      else if (dir === 'DOWN') { x = end.x - w / 2; y = end.y; }
+      else if (dir === 'UP') { x = end.x - w / 2; y = end.y - h; }
+
+      // فحص الحدود والتصادم
+      const outOfBounds = x < -BOUNDARY || x + w > BOUNDARY || y < -BOUNDARY || y + h > BOUNDARY;
+      if (!outOfBounds && !checkCollision(x, y, w, h)) {
+        place(tile, x, y, w, h, isDouble ? 0 : (dir === 'RIGHT' || dir === 'LEFT' ? 90 : 0), isDouble);
+        
+        if (dir === 'RIGHT') end = { x: x + w, y: end.y, dir: 'RIGHT' };
+        else if (dir === 'LEFT') end = { x: x, y: end.y, dir: 'LEFT' };
+        else if (dir === 'DOWN') end = { x: end.x, y: y + h, dir: 'DOWN' };
+        else if (dir === 'UP') end = { x: end.x, y: y, dir: 'UP' };
+        
+        placedSuccessfully = true;
+      }
+
+      // محاولة 2: الانعطاف 90 درجة (إذا فشلت المحاولة الأولى)
+      if (!placedSuccessfully) {
+        if (dir === 'RIGHT') dir = isRight ? 'DOWN' : 'UP';
+        else if (dir === 'LEFT') dir = isRight ? 'UP' : 'DOWN';
+        else if (dir === 'DOWN') dir = isRight ? 'LEFT' : 'RIGHT';
+        else if (dir === 'UP') dir = isRight ? 'RIGHT' : 'LEFT';
+
+        w = (dir === 'RIGHT' || dir === 'LEFT') ? (isDouble ? TILE_H : TILE_W) : (isDouble ? TILE_W : TILE_H);
+        h = (dir === 'RIGHT' || dir === 'LEFT') ? (isDouble ? TILE_W : TILE_H) : (isDouble ? TILE_H : TILE_W);
+
+        if (dir === 'RIGHT') { x = end.x; y = end.y - h / 2; }
+        else if (dir === 'LEFT') { x = end.x - w; y = end.y - h / 2; }
+        else if (dir === 'DOWN') { x = end.x - w / 2; y = end.y; }
+        else if (dir === 'UP') { x = end.x - w / 2; y = end.y - h; }
+
+        if (!checkCollision(x, y, w, h)) {
+          place(tile, x, y, w, h, isDouble ? 0 : (dir === 'RIGHT' || dir === 'LEFT' ? 90 : 0), isDouble);
+          
+          if (dir === 'RIGHT') end = { x: x + w, y: end.y, dir: 'RIGHT' };
+          else if (dir === 'LEFT') end = { x: x, y: end.y, dir: 'LEFT' };
+          else if (dir === 'DOWN') end = { x: end.x, y: y + h, dir: 'DOWN' };
+          else if (dir === 'UP') end = { x: end.x, y: y, dir: 'UP' };
+        }
+      }
+    }
+
+    if (isRight) rightEnd = end; else leftEnd = end;
+  };
+
+  buildArm(true);  // بناء الذراع اليمنى
+  buildArm(false); // بناء الذراع اليسرى
+
+  // 3. تطبيع الإحداثيات (توسيط الطاولة)
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const p of out) {
+  for (const p of placed) {
     minX = Math.min(minX, p.x);
     minY = Math.min(minY, p.y);
     maxX = Math.max(maxX, p.x + p.w);
     maxY = Math.max(maxY, p.y + p.h);
   }
-  for (const p of out) {
-    p.x -= minX;
-    p.y -= minY;
-  }
 
-  return { tiles: out, width: maxX - minX, height: maxY - minY };
+  const width = maxX - minX;
+  const height = maxY - minY;
+  const tiles = placed.map(p => ({ ...p, x: p.x - minX, y: p.y - minY }));
+
+  return { tiles, width, height };
 }
