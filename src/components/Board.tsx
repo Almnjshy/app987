@@ -11,8 +11,8 @@ interface BoardProps {
   dropSideRefs?: React.MutableRefObject<{ left: HTMLDivElement | null; right: HTMLDivElement | null }>;
 }
 
-// الإصلاح الجذري: حجم الخلية يجب أن يطابق حجم القطعة (md = 40x80)
-const CELL = 40;
+// الإصلاح: حجم الخلية 30 ليتطابق مع حجم القطعة sm (30x60)
+const CELL = 30;
 
 function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSide, dropSideRefs }: BoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -98,11 +98,8 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
                 height: p.h * CELL,
               }}
             >
-              {/* 
-                القطعة الآن موضوعة في صندوق بنفس حجمها تماماً.
-                مكون DominoTile يتولى أمر التدوير (rotation) بنفسه.
-              */}
-              <DominoTile tile={p.tile} size="md" faceUp={true} rotation={p.rotation} />
+              {/* استخدام حجم sm ليتناسب مع حجم يد اللاعب */}
+              <DominoTile tile={p.tile} size="sm" faceUp={true} rotation={p.rotation} />
             </div>
           );
         })}
