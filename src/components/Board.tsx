@@ -28,21 +28,14 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     return () => ro.disconnect();
   }, []);
 
-  const layout = useMemo(() => {
-    const w = Math.floor(containerSize.w / CELL);
-    const h = Math.floor(containerSize.h / CELL);
-    return layoutChain(chain, w, h);
-  }, [chain, containerSize]);
+  // العودة لاستدعاء المحرك بدون تمرير أبعاد الشاشة
+  const layout = useMemo(() => layoutChain(chain), [chain]);
 
   if (chain.length === 0) {
     return (
       <div
         className={`flex items-center justify-center ${className}`}
-        style={{
-          background: 'rgba(13, 122, 58, 0.15)',
-          borderRadius: 16,
-          border: '2px dashed rgba(201, 168, 76, 0.2)',
-        }}
+        style={{ background: 'rgba(13, 122, 58, 0.15)', borderRadius: 16, border: '2px dashed rgba(201, 168, 76, 0.2)' }}
       >
         <span className="text-[#B8A080] text-sm font-arabic">ابدأ اللعب</span>
       </div>
@@ -53,7 +46,7 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
   const fullW = (layout.width + pad * 2) * CELL;
   const fullH = (layout.height + pad * 2) * CELL;
   
-  // حماية رياضية لمنع scale من أن يكون NaN أو صفر
+  // حساب الـ Zoom (التصغير التلقائي)
   const rawScale = Math.min(containerSize.w / fullW, containerSize.h / fullH);
   const scale = isFinite(rawScale) && rawScale > 0 ? Math.min(rawScale, 1) : 1;
 
@@ -75,11 +68,7 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     <div
       ref={containerRef}
       className={`relative overflow-hidden ${className}`}
-      style={{
-        background: 'rgba(13, 122, 58, 0.1)',
-        borderRadius: 16,
-        border: '1px solid rgba(201, 168, 76, 0.15)',
-      }}
+      style={{ background: 'rgba(13, 122, 58, 0.1)', borderRadius: 16, border: '1px solid rgba(201, 168, 76, 0.15)' }}
     >
       <div
         className="absolute"
