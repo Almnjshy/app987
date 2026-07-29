@@ -8,10 +8,10 @@ import type { ChainTile, Tile } from '@/types/game';
 
 export interface PositionedTile {
   tile: Tile;
-  x: number; // الإحداثي السيني (بكسل)
-  y: number; // الإحداثي الصادي (بكسل)
-  w: number; // العرض (بكسل)
-  h: number; // الارتفاع (بكسل)
+  x: number; // الإحداثي السيني (بوحدة الخلية)
+  y: number; // الإحداثي الصادي (بوحدة الخلية)
+  w: number; // العرض (بوحدة الخلية)
+  h: number; // الارتفاع (بوحدة الخلية)
   rotation: number;
   isDouble: boolean;
 }
@@ -32,9 +32,9 @@ interface BoundingBox {
   x1: number; y1: number; x2: number; y2: number;
 }
 
-const TILE_W = 40;  // عرض القطعة الأفقية
-const TILE_H = 20;  // ارتفاع القطعة الأفقية
-const BOUNDARY = 120; // المسافة الآمنة قبل الانعطاف
+const TILE_W = 2;  // طول القطعة (بوحدة الخلية)
+const TILE_H = 1;  // سمك القطعة (بوحدة الخلية)
+const BOUNDARY = 6; // المسافة الآمنة قبل الانعطاف (بوحدة الخلية)
 
 export function layoutChain(chain: ChainTile[]): SnakeLayout {
   if (chain.length === 0) return { tiles: [], width: 0, height: 0 };
@@ -90,7 +90,6 @@ export function layoutChain(chain: ChainTile[]): SnakeLayout {
       else if (dir === 'DOWN') { x = end.x - w / 2; y = end.y; }
       else if (dir === 'UP') { x = end.x - w / 2; y = end.y - h; }
 
-      // فحص الحدود والتصادم
       const outOfBounds = x < -BOUNDARY || x + w > BOUNDARY || y < -BOUNDARY || y + h > BOUNDARY;
       if (!outOfBounds && !checkCollision(x, y, w, h)) {
         place(tile, x, y, w, h, isDouble ? 0 : (dir === 'RIGHT' || dir === 'LEFT' ? 90 : 0), isDouble);
@@ -113,18 +112,19 @@ export function layoutChain(chain: ChainTile[]): SnakeLayout {
         w = (dir === 'RIGHT' || dir === 'LEFT') ? (isDouble ? TILE_H : TILE_W) : (isDouble ? TILE_W : TILE_H);
         h = (dir === 'RIGHT' || dir === 'LEFT') ? (isDouble ? TILE_W : TILE_H) : (isDouble ? TILE_H : TILE_W);
 
-        if (dir === 'RIGHT') { x = end.x; y = end.y - h / 2; }
-        else if (dir === 'LEFT') { x = end.x - w; y = end.y - h / 2; }
-        else if (dir === 'DOWN') { x = end.x - w / 2; y = end.y; }
-        else if (dir === 'UP') { x = end.x - w / 2; y = end.y - h; }
+        // حساب الإحداثيات للانعطاف النظيف (بدون تداخل)
+        if (dir === 'RIGHT') { x = end.x + 0.5; y = end.y - h / 2; }
+        else if (dir === 'LEFT') { x = end.x - 0.5 - w; y = end.y - h / 2; }
+        else if (dir === 'DOWN') { x = end.x - w / 2; y = end.y + 0.5; }
+        else if (dir === 'UP') { x = end.x - w / 2; y = end.y - 0.5 - h; }
 
         if (!checkCollision(x, y, w, h)) {
           place(tile, x, y, w, h, isDouble ? 0 : (dir === 'RIGHT' || dir === 'LEFT' ? 90 : 0), isDouble);
           
-          if (dir === 'RIGHT') end = { x: x + w, y: end.y, dir: 'RIGHT' };
-          else if (dir === 'LEFT') end = { x: x, y: end.y, dir: 'LEFT' };
-          else if (dir === 'DOWN') end = { x: end.x, y: y + h, dir: 'DOWN' };
-          else if (dir === 'UP') end = { x: end.x, y: y, dir: 'UP' };
+          if (dir === 'RIGHT') end = { x: x + w, y: y + h / 2, dir: 'RIGHT' };
+          else if (dir === 'LEFT') end = { x: x, y: y + h / 2, dir: 'LEFT' };
+          else if (dir === 'DOWN') end = { x: x + w / 2, y: y + h, dir: 'DOWN' };
+          else if (dir === 'UP') end = { x: x + w / 2, y: y, dir: 'UP' };
         }
       }
     }
