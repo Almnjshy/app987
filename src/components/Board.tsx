@@ -11,7 +11,7 @@ interface BoardProps {
   dropSideRefs?: React.MutableRefObject<{ left: HTMLDivElement | null; right: HTMLDivElement | null }>;
 }
 
-const CELL = 30; // بكسل لكل خلية (سمك القطعة)
+const CELL = 30; // بكسل لكل خلية
 
 function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSide, dropSideRefs }: BoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -45,7 +45,7 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     );
   }
 
-  const pad = 1; // خلية هامش
+  const pad = 1;
   const fullW = (layout.width + pad * 2) * CELL;
   const fullH = (layout.height + pad * 2) * CELL;
   const scale = Math.min(containerSize.w / fullW, containerSize.h / fullH, 1);
@@ -57,7 +57,6 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     const cellX = side === 'left' ? p.x - 1.2 : p.x + p.w + 0.2;
     const centerY = p.y + p.h / 2;
     const cellY = centerY - 0.75;
-
     return {
       left: (pad + cellX) * CELL,
       top: (pad + cellY) * CELL,
@@ -102,12 +101,11 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
                 height: targetH,
               }}
             >
-              <div style={{ width: '100%', height: '100%' }}>
+              <div style={{ transform: `rotate(${p.rotation}deg)` }}>
                 <DominoTile
                   tile={p.tile}
                   size="md"
                   faceUp={true}
-                  rotation={p.rotation}
                 />
               </div>
             </div>
