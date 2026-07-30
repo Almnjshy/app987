@@ -15,8 +15,8 @@ export interface EndPoint {
   parentH: number; parentW: number;
 }
 
-const L = 90, W = 45; 
-// تم توسيع الحدود لتكون لوحة ضخمة تستغل العرض وتصغر القطع
+// تم تصغير حجم القطعة الأساسي لتكون مناسبة للشاشة
+const L = 60, W = 30; 
 const MAX_X = 1400, MIN_X = 200, MAX_Y = 800, MIN_Y = 100;
 
 function getDims(d: Dir, isDouble: boolean): { w: number, h: number } {
@@ -56,7 +56,6 @@ export function calculateLayout(chain: ChainTile[]): { tiles: RenderTile[], left
   const first = chain.find((c) => c.side === null) || chain[0];
   const fIsDouble = first.tile.isDouble;
   const fDims = getDims('RIGHT', fIsDouble);
-  // منتصف اللوحة الضخمة الجديدة (1600x900)
   const fx = 800 - fDims.w / 2;
   const fy = 450 - fDims.h / 2;
   pushRenderTile(first.tile, fx, fy, fDims.w, fDims.h, 'RIGHT', first.left, first.right);
