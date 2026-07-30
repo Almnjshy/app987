@@ -1,6 +1,6 @@
 /**
- * محرك التخطيط الشبكي (Grid Layout Engine).
- * يعتمد على حد ثابت للانعطاف، ويعالج وضعية المزدوجة (Perpendicular) بدقة.
+ * محرك التخطيط الشبكي (Grid Layout Engine) - الإصدار الهندسي الصارم.
+ * يطبق قواعد الدومينو العالمية بدقة: نقاط ارتكاز، زوايا 90 درجة، ومزدوجات متعامدة.
  */
 
 import type { ChainTile, Tile } from '@/types/game';
@@ -24,18 +24,18 @@ export interface SnakeLayout {
 type Dir = 'RIGHT' | 'LEFT' | 'DOWN' | 'UP';
 
 interface EndPoint {
-  cx: number;
+  cx: number; // مركز الحافة المكشوفة
   cy: number;
   dir: Dir;
 }
 
-const BOUNDARY = 6; // حد ثابت للانعطاف
+const BOUNDARY = 6; // الحد الأقصى للامتداد قبل الانعطاف
 
 function getRotation(tile: Tile, inward: number, dir: Dir): number {
-  if (dir === 'RIGHT') return tile.top === inward ? 270 : 90;
+  if (dir === 'RIGHT') return tile.bottom === inward ? 90 : 270;
   if (dir === 'LEFT') return tile.top === inward ? 90 : 270;
   if (dir === 'DOWN') return tile.top === inward ? 0 : 180;
-  if (dir === 'UP') return tile.top === inward ? 180 : 0;
+  if (dir === 'UP') return tile.bottom === inward ? 0 : 180;
   return 0;
 }
 
@@ -47,14 +47,12 @@ export function layoutChain(chain: ChainTile[]): SnakeLayout {
     placed.push({ tile, x, y, w, h, rotation, isDouble });
   };
 
-  // 1. وضع القطعة الأولى
   const first = chain.find((c) => c.side === null) || chain[0];
   const fIsDouble = first.tile.isDouble;
   const fw = fIsDouble ? 1 : 2;
   const fh = fIsDouble ? 2 : 1;
   const fx = -fw / 2;
   const fy = -fh / 2;
-  // إذا كانت مزدوجة توضع عمودية (0)، وإذا كانت عادية توضع أفقية (90)
   place(first.tile, fx, fy, fw, fh, fIsDouble ? 0 : 90, fIsDouble);
 
   let leftEnd: EndPoint = { cx: fx, cy: fy + fh / 2, dir: 'LEFT' };
@@ -75,26 +73,18 @@ export function layoutChain(chain: ChainTile[]): SnakeLayout {
       let w = 0, h = 0, x = 0, y = 0, rot = 0;
       let placedSuccessfully = false;
 
-      // دالة ذكية لتحديد الأبعاد والاتجاه بناءً على نوع القطعة
       const setDims = (currentDir: Dir) => {
         if (currentDir === 'RIGHT' || currentDir === 'LEFT') {
-          if (isDouble) {
-            w = 1; h = 2; rot = 0; // مزدوجة عمودية في خط أفقي
-          } else {
-            w = 2; h = 1; rot = getRotation(tile, inward, currentDir);
-          }
-        } else { // DOWN أو UP
-          if (isDouble) {
-            w = 2; h = 1; rot = 90; // مزدوجة أفقية في خط عمودي
-          } else {
-            w = 1; h = 2; rot = getRotation(tile, inward, currentDir);
-          }
+          if (isDouble) { w = 1; h = 2; rot = 0; } 
+          else { w = 2; h = 1; rot = getRotation(tile, inward, currentDir); }
+        } else {
+          if (isDouble) { w = 2; h = 1; rot = 90; } 
+          else { w = 1; h = 2; rot = getRotation(tile, inward, currentDir); }
         }
       };
 
       // محاولة 1: الاستمرار في نفس الاتجاه
       setDims(dir);
-
       if (dir === 'RIGHT') { x = end.cx; y = end.cy - h / 2; }
       else if (dir === 'LEFT') { x = end.cx - w; y = end.cy - h / 2; }
       else if (dir === 'DOWN') { x = end.cx - w / 2; y = end.cy; }
@@ -110,7 +100,7 @@ export function layoutChain(chain: ChainTile[]): SnakeLayout {
         placedSuccessfully = true;
       }
 
-      // محاولة 2: انعطاف 90 درجة
+      // محاولة 2: انعطاف 90 درجة (L-Shape)
       if (!placedSuccessfully) {
         if (dir === 'RIGHT') dir = isRight ? 'DOWN' : 'UP';
         else if (dir === 'LEFT') dir = isRight ? 'UP' : 'DOWN';
@@ -118,20 +108,12 @@ export function layoutChain(chain: ChainTile[]): SnakeLayout {
         else if (dir === 'UP') dir = isRight ? 'RIGHT' : 'LEFT';
 
         setDims(dir);
-
-        if (dir === 'RIGHT') {
-          x = end.cx; y = end.cy - h / 2;
-          end = { cx: x + w, cy: end.cy, dir: 'RIGHT' };
-        } else if (dir === 'LEFT') {
-          x = end.cx - w; y = end.cy - h / 2;
-          end = { cx: x, cy: end.cy, dir: 'LEFT' };
-        } else if (dir === 'DOWN') {
-          x = end.cx - w / 2; y = end.cy;
-          end = { cx: end.cx, cy: y + h, dir: 'DOWN' };
-        } else if (dir === 'UP') {
-          x = end.cx - w / 2; y = end.cy - h;
-          end = { cx: end.cx, cy: y, dir: 'UP' };
-        }
+        
+        // رياضيات الزاوية: التداخل 0.5 خلية لربط منتصف الحافة
+        if (dir === 'RIGHT') { x = end.cx - 0.5; y = end.cy - h / 2; end = { cx: x + w, cy: end.cy, dir: 'RIGHT' }; }
+        else if (dir === 'LEFT') { x = end.cx - w + 0.5; y = end.cy - h / 2; end = { cx: x, cy: end.cy, dir: 'LEFT' }; }
+        else if (dir === 'DOWN') { x = end.cx - w / 2; y = end.cy - 0.5; end = { cx: end.cx, cy: y + h, dir: 'DOWN' }; }
+        else if (dir === 'UP') { x = end.cx - w / 2; y = end.cy - h + 0.5; end = { cx: end.cx, cy: y, dir: 'UP' }; }
 
         place(tile, x, y, w, h, rot, isDouble);
       }
