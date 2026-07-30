@@ -11,8 +11,9 @@ interface BoardProps {
   dropSideRefs?: React.MutableRefObject<{ left: HTMLDivElement | null; right: HTMLDivElement | null }>;
 }
 
-const BASE_W = 850;
-const BASE_H = 1700;
+// تم تصغير حجم اللوحة الافتراضية ليكبر الـ Zoom وتظهر القطع أكبر
+const BASE_W = 600;
+const BASE_H = 1200;
 
 function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSide, dropSideRefs }: BoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
