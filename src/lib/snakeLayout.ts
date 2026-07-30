@@ -1,6 +1,6 @@
 /**
  * محرك التخطيط الشبكي (Grid Layout Engine) - الإصدار الهجين النهائي.
- * يدمج بين: البنية الوظيفية النظيفة (React Friendly) + الرياضيات الهندسية الصارمة للزاوية.
+ * يدمج بين: البنية الوظيفية النظيفة + الرياضيات الهندسية الصارمة للزاوية + كشف التصادم.
  */
 
 import type { ChainTile, Tile } from '@/types/game';
@@ -23,7 +23,6 @@ export interface SnakeLayout {
 
 type Dir = 'RIGHT' | 'LEFT' | 'DOWN' | 'UP';
 
-// واجهة نقطة النهاية تحمل أبعاد القطعة الأم ل حساب الزاوية بدقة
 interface EndPoint {
   val: number;
   x: number;
@@ -33,7 +32,11 @@ interface EndPoint {
   parentH: number;
 }
 
-const BOUNDARY = 6; // الحد الأقصى للخلايا قبل الانعطاف
+interface BoundingBox {
+  x1: number; y1: number; x2: number; y2: number;
+}
+
+const BOUNDARY = 10; // الحد الأقصى للخلايا قبل الانعطاف
 
 function getDims(dir: Dir, isDouble: boolean): { w: number, h: number } {
   const L = 2, W = 1; // أبعاد ثابتة بنظام الخلايا
@@ -56,11 +59,21 @@ export function layoutChain(chain: ChainTile[]): SnakeLayout {
   if (chain.length === 0) return { tiles: [], width: 0, height: 0 };
 
   const placed: PositionedTile[] = [];
-  const place = (tile: Tile, x: number, y: number, w: number, h: number, rotation: number, isDouble: boolean) => {
-    placed.push({ tile, x, y, w, h, rotation, isDouble });
+  const occupied: BoundingBox[] = [];
+
+  const checkCollision = (x: number, y: number, w: number, h: number): boolean => {
+    const box = { x1: x, y1: y, x2: x + w, y2: y + h };
+    for (const o of occupied) {
+      if (box.x1 < o.x2 && box.x2 > o.x1 && box.y1 < o.y2 && box.y2 > o.y1) return true;
+    }
+    return false;
   };
 
-  // 1. وضع القطعة الأولى في المنتصف
+  const place = (tile: Tile, x: number, y: number, w: number, h: number, rotation: number, isDouble: boolean) => {
+    placed.push({ tile, x, y, w, h, rotation, isDouble });
+    occupied.push({ x1: x, y1: y, x2: x + w, y2: y + h });
+  };
+
   const first = chain.find((c) => c.side === null) || chain[0];
   const fIsDouble = first.tile.isDouble;
   const fDims = getDims('RIGHT', fIsDouble);
@@ -94,28 +107,28 @@ export function layoutChain(chain: ChainTile[]): SnakeLayout {
       else if (dir === 'DOWN') { x = end.x - w / 2; y = end.y; }
       else if (dir === 'UP') { x = end.x - w / 2; y = end.y - h; }
 
-      // فحص الحدود
       const outOfBounds = x < -BOUNDARY || x + w > BOUNDARY || y < -BOUNDARY || y + h > BOUNDARY;
+      const collides = checkCollision(x, y, w, h);
 
-      // محاولة 2: الانعطاف (رياضيات الزاوية الدقيقة من BoardLayout)
-      if (outOfBounds) {
+      // محاولة 2: الانعطاف (رياضيات الزاوية الدقيقة + فحص التصادم)
+      if (outOfBounds || collides) {
         if (dir === 'RIGHT') {
-          dir = isRight ? 'DOWN' : 'UP';
+          dir = 'DOWN';
           dims = getDims(dir, isDouble); w = dims.w; h = dims.h;
           x = end.x - w; 
           y = end.y + end.parentH / 2; 
         } else if (dir === 'LEFT') {
-          dir = isRight ? 'UP' : 'DOWN';
+          dir = 'UP';
           dims = getDims(dir, isDouble); w = dims.w; h = dims.h;
           x = end.x; 
           y = end.y - end.parentH / 2 - h; 
         } else if (dir === 'DOWN') {
-          dir = isRight ? 'LEFT' : 'RIGHT';
+          dir = 'LEFT';
           dims = getDims(dir, isDouble); w = dims.w; h = dims.h;
           x = end.x - w - end.parentW / 2; 
           y = end.y - h; 
         } else if (dir === 'UP') {
-          dir = isRight ? 'RIGHT' : 'LEFT';
+          dir = 'RIGHT';
           dims = getDims(dir, isDouble); w = dims.w; h = dims.h;
           x = end.x + end.parentW / 2; 
           y = end.y; 
