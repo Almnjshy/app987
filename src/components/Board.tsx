@@ -11,8 +11,7 @@ interface BoardProps {
   dropSideRefs?: React.MutableRefObject<{ left: HTMLDivElement | null; right: HTMLDivElement | null }>;
 }
 
-// الإصلاح الجذري: حجم الخلية يجب أن يطابق حجم القطعة تماماً
-const CELL = 30; 
+const CELL = 30;
 
 function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSide, dropSideRefs }: BoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -35,11 +34,7 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     return (
       <div
         className={`flex items-center justify-center ${className}`}
-        style={{
-          background: 'rgba(13, 122, 58, 0.15)',
-          borderRadius: 16,
-          border: '2px dashed rgba(201, 168, 76, 0.2)',
-        }}
+        style={{ background: 'rgba(13, 122, 58, 0.15)', borderRadius: 16, border: '2px dashed rgba(201, 168, 76, 0.2)' }}
       >
         <span className="text-[#B8A080] text-sm font-arabic">ابدأ اللعب</span>
       </div>
@@ -71,11 +66,7 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     <div
       ref={containerRef}
       className={`relative overflow-hidden ${className}`}
-      style={{
-        background: 'rgba(13, 122, 58, 0.1)',
-        borderRadius: 16,
-        border: '1px solid rgba(201, 168, 76, 0.15)',
-      }}
+      style={{ background: 'rgba(13, 122, 58, 0.1)', borderRadius: 16, border: '1px solid rgba(201, 168, 76, 0.15)' }}
     >
       <div
         className="absolute"
@@ -88,21 +79,33 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
           transformOrigin: 'center center',
         }}
       >
-        {layout.tiles.map((p) => (
-          <div
-            key={p.tile.id}
-            className="absolute flex items-center justify-center"
-            style={{
-              left: (pad + p.x) * CELL,
-              top: (pad + p.y) * CELL,
-              width: p.w * CELL,
-              height: p.h * CELL,
-            }}
-          >
-            {/* استخدام حجم sm ليتطابق مع CELL = 30 */}
-            <DominoTile tile={p.tile} size="sm" faceUp={true} rotation={p.rotation} />
-          </div>
-        ))}
+        {layout.tiles.map((p, index) => {
+          const targetW = p.w * CELL;
+          const targetH = p.h * CELL;
+          
+          return (
+            <div
+              key={p.tile.id}
+              className="absolute"
+              style={{
+                left: (pad + p.x) * CELL,
+                top: (pad + p.y) * CELL,
+                width: targetW,
+                height: targetH,
+                zIndex: index, // إصلاح الترتيب الطبقي
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'visible',
+              }}
+            >
+              {/* إزالة الانزياح: نطبق الدوران على حاوية داخلية تملأ الصندوق بالكامل */}
+              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <DominoTile tile={p.tile} size="sm" faceUp={true} rotation={p.rotation} />
+              </div>
+            </div>
+          );
+        })}
 
         {leftEndTile && highlightEnds.includes('left') && (
           <div
