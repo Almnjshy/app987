@@ -16,7 +16,8 @@ export interface EndPoint {
 }
 
 const L = 90, W = 45; // الأبعاد الأصلية بالبكسل
-const MAX_X = 750, MIN_X = 100, MAX_Y = 1400, MIN_Y = 250;
+// تم تصغير حدود الملعب لتناسب الحجم الجديد
+const MAX_X = 520, MIN_X = 80, MAX_Y = 1000, MIN_Y = 150;
 
 function getDims(d: Dir, isDouble: boolean): { w: number, h: number } {
   if (d === 'RIGHT' || d === 'LEFT') return { w: isDouble ? W : L, h: isDouble ? L : W };
@@ -55,8 +56,9 @@ export function calculateLayout(chain: ChainTile[]): { tiles: RenderTile[], left
   const first = chain.find((c) => c.side === null) || chain[0];
   const fIsDouble = first.tile.isDouble;
   const fDims = getDims('RIGHT', fIsDouble);
-  const fx = 425 - fDims.w / 2;
-  const fy = 825 - fDims.h / 2;
+  // تم تعديل منتصف الشاشة ليتناسب مع الحجم الجديد (600x1200)
+  const fx = 300 - fDims.w / 2;
+  const fy = 600 - fDims.h / 2;
   pushRenderTile(first.tile, fx, fy, fDims.w, fDims.h, 'RIGHT', first.left, first.right);
   
   leftEnd = { val: first.left, x: fx, y: fy + fDims.h / 2, dir: 'LEFT', parentH: fDims.h, parentW: fDims.w };
