@@ -11,7 +11,8 @@ interface BoardProps {
   dropSideRefs?: React.MutableRefObject<{ left: HTMLDivElement | null; right: HTMLDivElement | null }>;
 }
 
-const CELL = 30;
+// الإصلاح الجذري: حجم الخلية يجب أن يطابق حجم القطعة تماماً
+const CELL = 30; 
 
 function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSide, dropSideRefs }: BoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -28,14 +29,17 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     return () => ro.disconnect();
   }, []);
 
-  // العودة لاستدعاء المحرك بدون تمرير أبعاد الشاشة
   const layout = useMemo(() => layoutChain(chain), [chain]);
 
   if (chain.length === 0) {
     return (
       <div
         className={`flex items-center justify-center ${className}`}
-        style={{ background: 'rgba(13, 122, 58, 0.15)', borderRadius: 16, border: '2px dashed rgba(201, 168, 76, 0.2)' }}
+        style={{
+          background: 'rgba(13, 122, 58, 0.15)',
+          borderRadius: 16,
+          border: '2px dashed rgba(201, 168, 76, 0.2)',
+        }}
       >
         <span className="text-[#B8A080] text-sm font-arabic">ابدأ اللعب</span>
       </div>
@@ -46,7 +50,6 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
   const fullW = (layout.width + pad * 2) * CELL;
   const fullH = (layout.height + pad * 2) * CELL;
   
-  // حساب الـ Zoom (التصغير التلقائي)
   const rawScale = Math.min(containerSize.w / fullW, containerSize.h / fullH);
   const scale = isFinite(rawScale) && rawScale > 0 ? Math.min(rawScale, 1) : 1;
 
@@ -68,7 +71,11 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     <div
       ref={containerRef}
       className={`relative overflow-hidden ${className}`}
-      style={{ background: 'rgba(13, 122, 58, 0.1)', borderRadius: 16, border: '1px solid rgba(201, 168, 76, 0.15)' }}
+      style={{
+        background: 'rgba(13, 122, 58, 0.1)',
+        borderRadius: 16,
+        border: '1px solid rgba(201, 168, 76, 0.15)',
+      }}
     >
       <div
         className="absolute"
@@ -92,6 +99,7 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
               height: p.h * CELL,
             }}
           >
+            {/* استخدام حجم sm ليتطابق مع CELL = 30 */}
             <DominoTile tile={p.tile} size="sm" faceUp={true} rotation={p.rotation} />
           </div>
         ))}
