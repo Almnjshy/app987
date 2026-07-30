@@ -4,18 +4,19 @@ import type { Tile } from '@/types/game';
 interface DominoTileProps {
   tile: Tile;
   size?: 'sm' | 'md' | 'lg';
-  width?: number;
-  height?: number;
   faceUp?: boolean;
   selected?: boolean;
   playable?: boolean;
   onClick?: () => void;
   className?: string;
+  rotation?: number;
+  style?: React.CSSProperties;
 }
 
 const PIP_POSITIONS: Record<number, [number, number][]> = {
-  0: [], 1: [[50, 50]], 
-  2: [[25, 25], [75, 75]], 
+  0: [],
+  1: [[50, 50]],
+  2: [[25, 25], [75, 75]],
   3: [[25, 25], [50, 50], [75, 75]],
   4: [[25, 25], [75, 25], [25, 75], [75, 75]],
   5: [[25, 25], [75, 25], [50, 50], [25, 75], [75, 75]],
@@ -23,19 +24,24 @@ const PIP_POSITIONS: Record<number, [number, number][]> = {
 };
 
 function DominoTileComponent({
-  tile, size = 'md', width, height, faceUp = true, selected = false, playable = false, onClick, className = '',
+  tile,
+  size = 'md',
+  faceUp = true,
+  selected = false,
+  playable = false,
+  onClick,
+  className = '',
+  rotation = 0,
+  style,
 }: DominoTileProps) {
-  // إذا تم تمرير width و height (من الطاولة) نستخدمهما، وإلا نستخدم size (من يد اللاعب)
   const sizes = {
     sm: { w: 30, h: 60 },
     md: { w: 40, h: 80 },
     lg: { w: 60, h: 120 },
   };
-  const finalW = width ?? sizes[size].w;
-  const finalH = height ?? sizes[size].h;
 
-  const isHorizontal = finalW > finalH;
-  const pipRadius = Math.min(finalW, finalH) * 0.12;
+  const { w, h } = sizes[size];
+  const pipRadius = size === 'sm' ? 3 : size === 'md' ? 4 : 6;
 
   if (!faceUp) {
     return (
@@ -43,63 +49,105 @@ function DominoTileComponent({
         onClick={onClick}
         className={`relative cursor-pointer transition-all duration-200 ${className}`}
         style={{
-          width: finalW, height: finalH, borderRadius: 6,
+          width: w,
+          height: h,
+          borderRadius: 6,
           background: 'linear-gradient(135deg, #3D2817 0%, #2D1810 50%, #1A0E08 100%)',
           border: '2px solid #5A3A20',
           boxShadow: '0 3px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1)',
+          transform: `rotate(${rotation}deg)`,
+          ...style,
         }}
       >
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="rounded-full" style={{ width: finalW * 0.3, height: finalW * 0.3, border: '2px solid #5A3A20', opacity: 0.5 }} />
+          <div
+            className="rounded-full"
+            style={{
+              width: w * 0.3,
+              height: w * 0.3,
+              border: '2px solid #5A3A20',
+              opacity: 0.5,
+            }}
+          />
         </div>
       </div>
     );
   }
 
-  const val1 = isHorizontal ? tile.top : tile.bottom;
-  const val2 = isHorizontal ? tile.bottom : tile.top;
-  const pips1 = PIP_POSITIONS[val1] || [];
-  const pips2 = PIP_POSITIONS[val2] || [];
+  const topPips = PIP_POSITIONS[tile.top] || [];
+  const bottomPips = PIP_POSITIONS[tile.bottom] || [];
 
   return (
     <div
       onClick={playable || selected ? onClick : undefined}
-      className={`relative transition-all duration-200 ${playable ? 'cursor-pointer hover:scale-105' : ''} ${className}`}
+      className={`relative transition-all duration-200 ${
+        playable ? 'cursor-pointer hover:scale-105 hover:-translate-y-1' : selected ? 'cursor-pointer' : ''
+      } ${className}`}
       style={{
-        width: finalW, height: finalH, borderRadius: 6,
+        width: w,
+        height: h,
+        borderRadius: 6,
         background: 'linear-gradient(180deg, #FFFEF8 0%, #FFF8F0 50%, #F5EDE0 100%)',
-        border: selected ? '3px solid #C9A84C' : playable ? '2px solid #2ECC40' : '2px solid #E0D5C8',
-        boxShadow: selected ? '0 0 15px rgba(201,168,76,0.6), 0 4px 12px rgba(0,0,0,0.4)' : '0 3px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.5)',
+        border: selected
+          ? '3px solid #C9A84C'
+          : playable
+          ? '2px solid #2ECC40'
+          : '2px solid #E0D5C8',
+        boxShadow: selected
+          ? '0 0 15px rgba(201,168,76,0.6), 0 4px 12px rgba(0,0,0,0.4)'
+          : playable
+          ? '0 0 10px rgba(46,204,64,0.4), 0 3px 8px rgba(0,0,0,0.3)'
+          : '0 3px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.5)',
+        transform: `rotate(${rotation}deg)`,
+        ...style,
       }}
     >
-      {/* النصف الأول */}
-      <div className="absolute" style={isHorizontal ? { left: 0, top: 0, bottom: 0, width: '50%' } : { top: 0, left: 0, right: 0, height: '50%' }}>
-        {pips1.map(([px, py], i) => (
-          <div key={`p1-${i}`} className="absolute rounded-full" style={{
-            width: pipRadius * 2, height: pipRadius * 2, left: `${px}%`, top: `${py}%`, transform: 'translate(-50%, -50%)',
-            background: 'radial-gradient(circle at 35% 35%, #333 0%, #1A1A1A 70%, #000 100%)',
-            boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.3)',
-          }} />
+      {/* Top half */}
+      <div className="absolute" style={{ top: 0, left: 0, right: 0, height: '50%' }}>
+        {topPips.map(([px, py], i) => (
+          <div
+            key={`top-${i}`}
+            className="absolute rounded-full"
+            style={{
+              width: pipRadius * 2,
+              height: pipRadius * 2,
+              left: `${px}%`,
+              top: `${py}%`,
+              transform: 'translate(-50%, -50%)',
+              background: 'radial-gradient(circle at 35% 35%, #333 0%, #1A1A1A 70%, #000 100%)',
+              boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.3)',
+            }}
+          />
         ))}
       </div>
 
-      {/* الخط الفاصل الديناميكي */}
-      <div className="absolute" style={isHorizontal ? {
-        left: '50%', top: '10%', bottom: '10%', width: 2, transform: 'translateX(-50%)',
-        background: 'linear-gradient(180deg, transparent 0%, #C9A84C 20%, #C9A84C 80%, transparent 100%)'
-      } : {
-        top: '50%', left: '10%', right: '10%', height: 2, transform: 'translateY(-50%)',
-        background: 'linear-gradient(90deg, transparent 0%, #C9A84C 20%, #C9A84C 80%, transparent 100%)'
-      }} />
+      {/* Divider */}
+      <div
+        className="absolute left-1 right-1"
+        style={{
+          top: '50%',
+          height: 2,
+          transform: 'translateY(-50%)',
+          background: 'linear-gradient(90deg, transparent 0%, #C9A84C 20%, #C9A84C 80%, transparent 100%)',
+        }}
+      />
 
-      {/* النصف الثاني */}
-      <div className="absolute" style={isHorizontal ? { right: 0, top: 0, bottom: 0, width: '50%' } : { bottom: 0, left: 0, right: 0, height: '50%' }}>
-        {pips2.map(([px, py], i) => (
-          <div key={`p2-${i}`} className="absolute rounded-full" style={{
-            width: pipRadius * 2, height: pipRadius * 2, left: `${px}%`, top: `${py}%`, transform: 'translate(-50%, -50%)',
-            background: 'radial-gradient(circle at 35% 35%, #333 0%, #1A1A1A 70%, #000 100%)',
-            boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.3)',
-          }} />
+      {/* Bottom half */}
+      <div className="absolute" style={{ bottom: 0, left: 0, right: 0, height: '50%' }}>
+        {bottomPips.map(([px, py], i) => (
+          <div
+            key={`bot-${i}`}
+            className="absolute rounded-full"
+            style={{
+              width: pipRadius * 2,
+              height: pipRadius * 2,
+              left: `${px}%`,
+              top: `${py}%`,
+              transform: 'translate(-50%, -50%)',
+              background: 'radial-gradient(circle at 35% 35%, #333 0%, #1A1A1A 70%, #000 100%)',
+              boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.3)',
+            }}
+          />
         ))}
       </div>
     </div>
