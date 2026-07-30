@@ -11,13 +11,13 @@ interface BoardProps {
   dropSideRefs?: React.MutableRefObject<{ left: HTMLDivElement | null; right: HTMLDivElement | null }>;
 }
 
-// اللوحة الآن عريضة (Landscape) لتناسب الشاشات الواسعة
-const BASE_W = 1200;
-const BASE_H = 700;
+// لوحة افتراضية ضخمة لتصغير القطع (Zoom Out) وجعلها متوسطة الحجم
+const BASE_W = 1600;
+const BASE_H = 900;
 
 function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSide, dropSideRefs }: BoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [containerSize, setContainerSize] = useState({ w: 1200, h: 700 });
+  const [containerSize, setContainerSize] = useState({ w: 1600, h: 900 });
 
   useEffect(() => {
     const el = containerRef.current;
