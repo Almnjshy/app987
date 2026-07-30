@@ -15,7 +15,7 @@ const CELL = 30;
 
 function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSide, dropSideRefs }: BoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [containerSize, setContainerSize] = useState({ w: 600, h: 300 });
+  const [containerSize, setContainerSize] = useState({ w: 800, h: 400 });
 
   useEffect(() => {
     const el = containerRef.current;
@@ -52,6 +52,10 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
   const rawScale = Math.min(containerSize.w / fullW, containerSize.h / fullH);
   const scale = isFinite(rawScale) && rawScale > 0 ? Math.min(rawScale, 1) : 1;
 
+  // الإصلاح العبقري: حساب مركز الطاولة بالبكسل لمنع انزياح الـ Zoom
+  const left = (containerSize.w - fullW) / 2;
+  const top = (containerSize.h - fullH) / 2;
+
   const leftEndTile = layout.tiles.find((p) => p.tile.id === chain[0].tile.id);
   const rightEndTile = layout.tiles.find((p) => p.tile.id === chain[chain.length - 1].tile.id);
 
@@ -81,14 +85,13 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
         style={{
           width: fullW,
           height: fullH,
-          left: '50%',
-          top: '50%',
-          transform: `translate(-50%, -50%) scale(${scale})`,
+          left: left,
+          top: top,
+          transform: `scale(${scale})`,
           transformOrigin: 'center center',
         }}
       >
         {layout.tiles.map((p) => {
-          // حساب المركز الدقيق للقطعة في الشبكة
           const cx = (pad + p.x + p.w / 2) * CELL;
           const cy = (pad + p.y + p.h / 2) * CELL;
 
@@ -104,10 +107,6 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
                 zIndex: 1,
               }}
             >
-              {/* 
-                الحل العبقري: وضع القطعة في مركز الإحداثيات (0,0) ثم إزاحتها للمنتصف
-                هذا يضمن أن دوران القطعة (Rotation) يحدث حول مركزها ولا يفيض على غيرها
-              */}
               <div style={{ position: 'absolute', transform: `translate(-50%, -50%) rotate(${p.rotation}deg)` }}>
                 <DominoTile tile={p.tile} size="sm" faceUp={true} />
               </div>
