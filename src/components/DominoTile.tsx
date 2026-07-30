@@ -3,8 +3,9 @@ import type { Tile } from '@/types/game';
 
 interface DominoTileProps {
   tile: Tile;
-  width: number;
-  height: number;
+  size?: 'sm' | 'md' | 'lg';
+  width?: number;
+  height?: number;
   faceUp?: boolean;
   selected?: boolean;
   playable?: boolean;
@@ -22,10 +23,19 @@ const PIP_POSITIONS: Record<number, [number, number][]> = {
 };
 
 function DominoTileComponent({
-  tile, width, height, faceUp = true, selected = false, playable = false, onClick, className = '',
+  tile, size = 'md', width, height, faceUp = true, selected = false, playable = false, onClick, className = '',
 }: DominoTileProps) {
-  const isHorizontal = width > height;
-  const pipRadius = Math.min(width, height) * 0.12;
+  // إذا تم تمرير width و height (من الطاولة) نستخدمهما، وإلا نستخدم size (من يد اللاعب)
+  const sizes = {
+    sm: { w: 30, h: 60 },
+    md: { w: 40, h: 80 },
+    lg: { w: 60, h: 120 },
+  };
+  const finalW = width ?? sizes[size].w;
+  const finalH = height ?? sizes[size].h;
+
+  const isHorizontal = finalW > finalH;
+  const pipRadius = Math.min(finalW, finalH) * 0.12;
 
   if (!faceUp) {
     return (
@@ -33,20 +43,19 @@ function DominoTileComponent({
         onClick={onClick}
         className={`relative cursor-pointer transition-all duration-200 ${className}`}
         style={{
-          width, height, borderRadius: 6,
+          width: finalW, height: finalH, borderRadius: 6,
           background: 'linear-gradient(135deg, #3D2817 0%, #2D1810 50%, #1A0E08 100%)',
           border: '2px solid #5A3A20',
           boxShadow: '0 3px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1)',
         }}
       >
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="rounded-full" style={{ width: width * 0.3, height: width * 0.3, border: '2px solid #5A3A20', opacity: 0.5 }} />
+          <div className="rounded-full" style={{ width: finalW * 0.3, height: finalW * 0.3, border: '2px solid #5A3A20', opacity: 0.5 }} />
         </div>
       </div>
     );
   }
 
-  // تحديد أي رقم يذهب لليسار/أعلى وأيهم لليمين/أسفل بناءً على الأبعاد
   const val1 = isHorizontal ? tile.top : tile.bottom;
   const val2 = isHorizontal ? tile.bottom : tile.top;
   const pips1 = PIP_POSITIONS[val1] || [];
@@ -57,7 +66,7 @@ function DominoTileComponent({
       onClick={playable || selected ? onClick : undefined}
       className={`relative transition-all duration-200 ${playable ? 'cursor-pointer hover:scale-105' : ''} ${className}`}
       style={{
-        width, height, borderRadius: 6,
+        width: finalW, height: finalH, borderRadius: 6,
         background: 'linear-gradient(180deg, #FFFEF8 0%, #FFF8F0 50%, #F5EDE0 100%)',
         border: selected ? '3px solid #C9A84C' : playable ? '2px solid #2ECC40' : '2px solid #E0D5C8',
         boxShadow: selected ? '0 0 15px rgba(201,168,76,0.6), 0 4px 12px rgba(0,0,0,0.4)' : '0 3px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.5)',
