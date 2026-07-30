@@ -1,7 +1,7 @@
 import { memo, useMemo, useRef, useState, useEffect } from 'react';
 import type { ChainTile, EndSide } from '@/types/game';
-import { layoutChain } from '@/lib/snakeLayout';
-import { DominoTile } from './DominoTile';
+import { calculateLayout } from '@/lib/boardLayout';
+import { AbsoluteDominoTile } from './DominoTile';
 
 interface BoardProps {
   chain: ChainTile[];
@@ -11,11 +11,12 @@ interface BoardProps {
   dropSideRefs?: React.MutableRefObject<{ left: HTMLDivElement | null; right: HTMLDivElement | null }>;
 }
 
-const CELL = 30;
+const BASE_W = 850;
+const BASE_H = 1700;
 
 function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSide, dropSideRefs }: BoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [containerSize, setContainerSize] = useState({ w: 800, h: 400 });
+  const [containerSize, setContainerSize] = useState({ w: 600, h: 300 });
 
   useEffect(() => {
     const el = containerRef.current;
@@ -28,116 +29,47 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
     return () => ro.disconnect();
   }, []);
 
-  const layout = useMemo(() => layoutChain(chain), [chain]);
+  const layout = useMemo(() => calculateLayout(chain), [chain]);
 
   if (chain.length === 0) {
     return (
-      <div
-        className={`flex items-center justify-center ${className}`}
-        style={{
-          background: 'rgba(13, 122, 58, 0.15)',
-          borderRadius: 16,
-          border: '2px dashed rgba(201, 168, 76, 0.2)',
-        }}
-      >
+      <div className={`flex items-center justify-center ${className}`}
+        style={{ background: 'rgba(13, 122, 58, 0.15)', borderRadius: 16, border: '2px dashed rgba(201, 168, 76, 0.2)' }}>
         <span className="text-[#B8A080] text-sm font-arabic">ابدأ اللعب</span>
       </div>
     );
   }
 
-  const pad = 1;
-  const fullW = (layout.width + pad * 2) * CELL;
-  const fullH = (layout.height + pad * 2) * CELL;
-  
-  const rawScale = Math.min(containerSize.w / fullW, containerSize.h / fullH);
-  const scale = isFinite(rawScale) && rawScale > 0 ? Math.min(rawScale, 1) : 1;
+  const rawScale = Math.min(containerSize.w / BASE_W, containerSize.h / BASE_H);
+  const scale = isFinite(rawScale) && rawScale > 0 ? rawScale : 1;
 
-  // الإصلاح العبقري: حساب مركز الطاولة بالبكسل لمنع انزياح الـ Zoom
-  const left = (containerSize.w - fullW) / 2;
-  const top = (containerSize.h - fullH) / 2;
-
-  const leftEndTile = layout.tiles.find((p) => p.tile.id === chain[0].tile.id);
-  const rightEndTile = layout.tiles.find((p) => p.tile.id === chain[chain.length - 1].tile.id);
-
-  const endZoneStyle = (p: { x: number; y: number; w: number; h: number }, side: EndSide): React.CSSProperties => {
-    const cellX = side === 'left' ? p.x - 1.5 : p.x + p.w + 0.5;
-    const cellY = p.y + p.h / 2 - 0.75;
-    return {
-      left: (pad + cellX) * CELL,
-      top: (pad + cellY) * CELL,
-      width: CELL * 1.5,
-      height: CELL * 1.5,
-    };
+  const endZoneStyle = (end: { x: number; y: number; dir: string } | null): React.CSSProperties => {
+    if (!end) return {};
+    return { left: end.x - 22, top: end.y - 22, width: 45, height: 45 };
   };
 
   return (
-    <div
-      ref={containerRef}
-      className={`relative overflow-hidden ${className}`}
-      style={{
-        background: 'rgba(13, 122, 58, 0.1)',
-        borderRadius: 16,
-        border: '1px solid rgba(201, 168, 76, 0.15)',
-      }}
-    >
-      <div
-        className="absolute"
-        style={{
-          width: fullW,
-          height: fullH,
-          left: left,
-          top: top,
-          transform: `scale(${scale})`,
-          transformOrigin: 'center center',
-        }}
-      >
-        {layout.tiles.map((p) => {
-          const cx = (pad + p.x + p.w / 2) * CELL;
-          const cy = (pad + p.y + p.h / 2) * CELL;
+    <div ref={containerRef} className={`relative overflow-hidden ${className}`}
+      style={{ background: 'rgba(13, 122, 58, 0.1)', borderRadius: 16, border: '1px solid rgba(201, 168, 76, 0.15)' }}>
+      
+      <div className="absolute" style={{
+        width: BASE_W, height: BASE_H, left: '50%', top: '50%',
+        transform: `translate(-50%, -50%) scale(${scale})`, transformOrigin: 'center center',
+      }}>
+        {layout.tiles.map((t) => (
+          <AbsoluteDominoTile key={t.tile.id} {...t} tile={t.tile} />
+        ))}
 
-          return (
-            <div
-              key={p.tile.id}
-              className="absolute"
-              style={{
-                left: cx,
-                top: cy,
-                width: 0,
-                height: 0,
-                zIndex: 1,
-              }}
-            >
-              <div style={{ position: 'absolute', transform: `translate(-50%, -50%) rotate(${p.rotation}deg)` }}>
-                <DominoTile tile={p.tile} size="sm" faceUp={true} />
-              </div>
-            </div>
-          );
-        })}
-
-        {leftEndTile && highlightEnds.includes('left') && (
-          <div
-            ref={(el) => { if (dropSideRefs) dropSideRefs.current.left = el; }}
-            onClick={() => onSelectSide?.('left')}
+        {layout.leftEnd && highlightEnds.includes('left') && (
+          <div ref={(el) => { if (dropSideRefs) dropSideRefs.current.left = el; }} onClick={() => onSelectSide?.('left')}
             className="absolute rounded-lg cursor-pointer animate-pulse z-10"
-            style={{
-              ...endZoneStyle(leftEndTile, 'left'),
-              border: '2px dashed #2ECC40',
-              background: 'rgba(46, 204, 64, 0.15)',
-            }}
-          />
+            style={{ ...endZoneStyle(layout.leftEnd), border: '2px dashed #2ECC40', background: 'rgba(46, 204, 64, 0.15)' }} />
         )}
 
-        {rightEndTile && highlightEnds.includes('right') && (
-          <div
-            ref={(el) => { if (dropSideRefs) dropSideRefs.current.right = el; }}
-            onClick={() => onSelectSide?.('right')}
+        {layout.rightEnd && highlightEnds.includes('right') && (
+          <div ref={(el) => { if (dropSideRefs) dropSideRefs.current.right = el; }} onClick={() => onSelectSide?.('right')}
             className="absolute rounded-lg cursor-pointer animate-pulse z-10"
-            style={{
-              ...endZoneStyle(rightEndTile, 'right'),
-              border: '2px dashed #2ECC40',
-              background: 'rgba(46, 204, 64, 0.15)',
-            }}
-          />
+            style={{ ...endZoneStyle(layout.rightEnd), border: '2px dashed #2ECC40', background: 'rgba(46, 204, 64, 0.15)' }} />
         )}
       </div>
     </div>
