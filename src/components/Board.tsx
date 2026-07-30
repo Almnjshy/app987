@@ -11,7 +11,7 @@ interface BoardProps {
   dropSideRefs?: React.MutableRefObject<{ left: HTMLDivElement | null; right: HTMLDivElement | null }>;
 }
 
-const CELL = 30;
+const CELL = 30; // حجم الخلية الأساسي
 
 function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSide, dropSideRefs }: BoardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -32,10 +32,8 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
 
   if (chain.length === 0) {
     return (
-      <div
-        className={`flex items-center justify-center ${className}`}
-        style={{ background: 'rgba(13, 122, 58, 0.15)', borderRadius: 16, border: '2px dashed rgba(201, 168, 76, 0.2)' }}
-      >
+      <div className={`flex items-center justify-center ${className}`}
+        style={{ background: 'rgba(13, 122, 58, 0.15)', borderRadius: 16, border: '2px dashed rgba(201, 168, 76, 0.2)' }}>
         <span className="text-[#B8A080] text-sm font-arabic">ابدأ اللعب</span>
       </div>
     );
@@ -54,75 +52,45 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
   const endZoneStyle = (p: { x: number; y: number; w: number; h: number }, side: EndSide): React.CSSProperties => {
     const cellX = side === 'left' ? p.x - 1.5 : p.x + p.w + 0.5;
     const cellY = p.y + p.h / 2 - 0.75;
-    return {
-      left: (pad + cellX) * CELL,
-      top: (pad + cellY) * CELL,
-      width: CELL * 1.5,
-      height: CELL * 1.5,
-    };
+    return { left: (pad + cellX) * CELL, top: (pad + cellY) * CELL, width: CELL * 1.5, height: CELL * 1.5 };
   };
 
   return (
-    <div
-      ref={containerRef}
-      className={`relative overflow-hidden ${className}`}
-      style={{ background: 'rgba(13, 122, 58, 0.1)', borderRadius: 16, border: '1px solid rgba(201, 168, 76, 0.15)' }}
-    >
-      <div
-        className="absolute"
-        style={{
-          width: fullW,
-          height: fullH,
-          left: '50%',
-          top: '50%',
-          transform: `translate(-50%, -50%) scale(${scale})`,
-          transformOrigin: 'center center',
-        }}
-      >
-        {layout.tiles.map((p, index) => {
+    <div ref={containerRef} className={`relative overflow-hidden ${className}`}
+      style={{ background: 'rgba(13, 122, 58, 0.1)', borderRadius: 16, border: '1px solid rgba(201, 168, 76, 0.15)' }}>
+      
+      <div className="absolute" style={{
+        width: fullW, height: fullH, left: '50%', top: '50%',
+        transform: `translate(-50%, -50%) scale(${scale})`, transformOrigin: 'center center',
+      }}>
+        {layout.tiles.map((p) => {
           const targetW = p.w * CELL;
           const targetH = p.h * CELL;
           
           return (
-            <div
-              key={p.tile.id}
-              className="absolute"
-              style={{
-                left: (pad + p.x) * CELL,
-                top: (pad + p.y) * CELL,
-                width: targetW,
-                height: targetH,
-                zIndex: index, // إصلاح الترتيب الطبقي
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'visible',
-              }}
-            >
-              {/* إزالة الانزياح: نطبق الدوران على حاوية داخلية تملأ الصندوق بالكامل */}
-              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <DominoTile tile={p.tile} size="sm" faceUp={true} rotation={p.rotation} />
-              </div>
+            <div key={p.tile.id} className="absolute" style={{
+              left: (pad + p.x) * CELL, top: (pad + p.y) * CELL,
+              width: targetW, height: targetH, zIndex: 1,
+            }}>
+              {/* 
+                نمرر العرض والارتفاع الفعليين للقطعة.
+                DominoTile سيرسم نفسه أفقياً أو عمودياً بناءً على الأبعاد دون إعتماد على CSS Rotate!
+              */}
+              <DominoTile tile={p.tile} width={targetW} height={targetH} faceUp={true} />
             </div>
           );
         })}
 
         {leftEndTile && highlightEnds.includes('left') && (
-          <div
-            ref={(el) => { if (dropSideRefs) dropSideRefs.current.left = el; }}
-            onClick={() => onSelectSide?.('left')}
+          <div ref={(el) => { if (dropSideRefs) dropSideRefs.current.left = el; }} onClick={() => onSelectSide?.('left')}
             className="absolute rounded-lg cursor-pointer animate-pulse z-10"
-            style={{ ...endZoneStyle(leftEndTile, 'left'), border: '2px dashed #2ECC40', background: 'rgba(46, 204, 64, 0.15)' }}
-          />
+            style={{ ...endZoneStyle(leftEndTile, 'left'), border: '2px dashed #2ECC40', background: 'rgba(46, 204, 64, 0.15)' }} />
         )}
 
         {rightEndTile && highlightEnds.includes('right') && (
-          <div
-            ref={(el) => { if (dropSideRefs) dropSideRefs.current.right = el; }}
-            onClick={() => onSelectSide?.('right')}
+          <div ref={(el) => { if (dropSideRefs) dropSideRefs.current.right = el; }} onClick={() => onSelectSide?.('right')}
             className="absolute rounded-lg cursor-pointer animate-pulse z-10"
-            style={{ ...endZoneStyle(rightEndTile, 'right'), border: '2px dashed #2ECC40', background: 'rgba(46, 204, 64, 0.15)' }}
-          />
+            style={{ ...endZoneStyle(rightEndTile, 'right'), border: '2px dashed #2ECC40', background: 'rgba(46, 204, 64, 0.15)' }} />
         )}
       </div>
     </div>
