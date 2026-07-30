@@ -11,7 +11,6 @@ interface BoardProps {
   dropSideRefs?: React.MutableRefObject<{ left: HTMLDivElement | null; right: HTMLDivElement | null }>;
 }
 
-// لوحة افتراضية ضخمة لتصغير القطع (Zoom Out) وجعلها متوسطة الحجم
 const BASE_W = 1600;
 const BASE_H = 900;
 
@@ -46,7 +45,7 @@ function BoardComponent({ chain, className = '', highlightEnds = [], onSelectSid
 
   const endZoneStyle = (end: { x: number; y: number; dir: string } | null): React.CSSProperties => {
     if (!end) return {};
-    return { left: end.x - 22, top: end.y - 22, width: 45, height: 45 };
+    return { left: end.x - 15, top: end.y - 15, width: 30, height: 30 }; // تم تصغير منطقة الإسقاط لتتناسب مع القطع
   };
 
   return (
